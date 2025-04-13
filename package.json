@@ -4,10 +4,25 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx src/cli/main.ts",
+    "build": "tsup src/cli/main.ts --format esm,cjs --dts",
+    "start": "node dist/cli/main.js"
+  },
+  "bin": {
+    "sagansync": "dist/main.js"
   },
   "keywords": [],
   "author": "Borgim",
   "license": "MIT",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.3"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "typescript": "^5.8.3"
+  }
 }

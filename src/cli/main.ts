@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+import { Command } from "commander";
+import { initCommand } from "./commands/init";
+// import { initCommand } from "../commands/init";
+// import { setupCommand } from "../commands/setup";
+
+const program = new Command();
+
+export const asciiArt = `                             
+                                 ..:^~!!7!!~^.              
+                           .^!J5GB##BBGGGGGB##B5!           
+                       :!YG##G5J7~:..       .^?G@B^         
+                    ^JG#B57^.                   ?@B.        
+                 :?B&BJ^                       !Y@&^        
+               :Y&&Y^       .:^~~~~~^:        5@@@@G        
+              7&@J.      ^JG#@@@@@@@@&B57.    5@@@&?        
+             J@#^      !G@@@GY?!!!!7JP#@@&? :Y&#7^.         
+            !@&:      7@@@5:          .~5P75@#?.            
+            5@P       B@@B              ~P&#?.              
+            !@#:      5@@&J:         .7B@G!.                
+             J@B^     .Y&@@&PJ~:   .J##Y^                   
+              !#@5^     :75B@@@@BP?!!~                      
+               .7B@B?^     .:!JPB&@@@#P?~.                  
+                  ~Y#&#57^.      :~75B&@@#Y^                
+                     :?P#&#GY7^.      :!YB@@P^              
+                    ^YB5^^7YG&@&GJ~.      !B@&~             
+                 .7B@G7:     .~?B@@#7      .G@#.            
+               ^Y&&5^            ?@@@~      ~@@~            
+             ~P@B7^              ?@@@!      ?@&:            
+           :P@B!:5&BJ~.      .:!5@@@Y      !@@7             
+          7&&7  .7G&@@&BGGGGB#@@@#5~     .Y@#~              
+         7@B:      :!J5GBBBBGPY?~.     :?&&J.               
+        ^@&:                        .!5&#J:                 
+        !@G                      :75##5!.                   
+        .P@5^              .:~?5B#GY~.                      
+          7G#BPY?77!77?JYPGBBBPJ!:                          
+            :~?J55PPPP5YJ7!^.                               
+`;
+
+program
+  .name("sagansync")
+  .description("Instantly deploy your local project to a VPS — real-time sync, HTTPS, and zero CI/CD.")
+  .version("0.0.1");
+
+// Register commands
+program
+  .command("init")
+  .description("Initialize project configuration for SaganSync")
+  .action(initCommand);
+
+program
+  .command("setup")
+  .description("Set up the VPS with Caddy and PM2 via SSH")
+  .action(() => console.log("setup command"));
+
+  if (!process.argv.slice(2).length) {
+    console.log(asciiArt);
+    program.outputHelp();
+  } else {
+    program.parse();
+  }

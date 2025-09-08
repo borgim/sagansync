@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { initCommand } from "./commands/init";
-// import { initCommand } from "../commands/init";
-// import { setupCommand } from "../commands/setup";
+import { provisionCommand } from "./commands/provision";
 
 const program = new Command();
 
@@ -49,9 +48,10 @@ program
   .action(initCommand);
 
 program
-  .command("setup")
-  .description("Set up the VPS with Caddy and PM2 via SSH")
-  .action(() => console.log("setup command"));
+  .command("provision")
+  .description("Provision the VPS with Podman and Caddy via SSH")
+  .action(provisionCommand);
+
 
   if (!process.argv.slice(2).length) {
     console.log(asciiArt);

@@ -13,7 +13,7 @@ Sagan Sync is a CLI tool that lets developers deploy code from their local machi
 - 🌐 **HTTPS with a fixed domain** via Caddy\*
 - ⚙️ **Automatic VPS setup**
 - 💥 **Compatible with any backend or frontend project**
-- 💻 **No Docker. No Git CI/CD. No stress.**
+- 💻 **No Git CI/CD. No stress.**
 
 ## About Fixed Domain
 

@@ -41,7 +41,6 @@ program
   .description("Instantly deploy your local project to a VPS — real-time sync, HTTPS, and zero CI/CD.")
   .version("0.0.1");
 
-// Register commands
 program
   .command("init")
   .description("Initialize project configuration for SaganSync")
@@ -50,6 +49,7 @@ program
 program
   .command("provision")
   .description("Provision the VPS with Podman and Caddy via SSH")
+  .option("-c, --clean", "Remove previous installations of Caddy and Podman before starting")
   .action(provisionCommand);
 
 

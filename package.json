@@ -21,6 +21,7 @@
     "tsx": "^4.19.3"
   },
   "dependencies": {
+    "@inquirer/prompts": "^8.0.1",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "typescript": "^5.8.3"

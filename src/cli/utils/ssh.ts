@@ -44,7 +44,7 @@ function buildCommonSSHArgs(opts: SSHOptions): string[] {
 
   if (strict === "no") {
     args.push("-o", `UserKnownHostsFile=${opts.userKnownHostsFile ?? "/dev/null"}`);
-    args.push("-o", "LogLevel=ERROR");
+    args.push("-o", "LogLevel=ERROR"); 
   } else if (opts.userKnownHostsFile) {
     args.push("-o", `UserKnownHostsFile=${opts.userKnownHostsFile}`);
     args.push("-o", "LogLevel=ERROR");
@@ -79,7 +79,6 @@ export function sshExec(
     const target = buildUserAtHost(opts);
     const sshArgs = buildCommonSSHArgs(opts);
 
-    // -T: disable pseudo-tty allocation (default). -tt: force TTY allocation
     if (exec.allocatePty) sshArgs.push("-tt");
 
     const envPrefix = buildRemoteEnvPrefix(exec.remoteEnv);
@@ -145,16 +144,21 @@ export function scpUpload(
 
     const strict = opts.strictHostKeyChecking ?? "no";
     args.push("-o", `StrictHostKeyChecking=${strict}`);
+    
     if (strict === "no") {
       args.push("-o", `UserKnownHostsFile=${opts.userKnownHostsFile ?? "/dev/null"}`);
+      args.push("-o", "LogLevel=ERROR"); 
     } else if (opts.userKnownHostsFile) {
       args.push("-o", `UserKnownHostsFile=${opts.userKnownHostsFile}`);
+      args.push("-o", "LogLevel=ERROR");
     }
 
     if (opts.recursive ?? true) args.push("-r");
+    
     args.push(localPath, `${target}:${remotePath}`);
 
     const child = spawn("scp", args, { stdio: "inherit" });
+    
     child.on("exit", (code) => {
       if (code === 0) return resolve({ code: 0 });
       reject(new Error(`SCP upload failed with code ${code}`));

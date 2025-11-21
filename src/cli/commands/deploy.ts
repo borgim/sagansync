@@ -211,14 +211,12 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
   if (deployDomain) {
     console.log(chalk.yellow(`🔗 Configuring Caddy for ${deployDomain}...`));
 
-    const caddyConfig = `${deployDomain} {
-  reverse_proxy 127.0.0.1:${hostPort}
-}`;
+    const caddyConfig = `${deployDomain} {\\n  reverse_proxy 127.0.0.1:${hostPort}\\n}`;
 
     const confFile = `/etc/caddy/conf.d/${projectName}-${workspaceName}.caddy`;
 
     const updateCaddyCmd = `
-      echo '${caddyConfig}' | sudo tee ${confFile}${silence} && 
+      printf "${caddyConfig}" | sudo tee ${confFile}${silence} && 
       sudo systemctl reload caddy
     `;
 

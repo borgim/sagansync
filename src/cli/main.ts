@@ -5,6 +5,7 @@ import { provisionCommand } from "./commands/provision";
 import { deployCommand } from "./commands/deploy";
 import { listCommand } from "./commands/list";
 import { removeCommand } from "./commands/remove";
+import { devCommand } from "./commands/dev";
 
 const program = new Command();
 
@@ -74,6 +75,18 @@ program
   )
   .option("-v, --verbose", "Show detailed logs (podman stop/rm/etc)")
   .action(deployCommand);
+
+program
+  .command("dev")
+  .description("Start development mode (hot-reload) on the VPS")
+  .option("-w, --workspace <name>", "Override workspace name")
+  .option("-f, --force", "Force dev mode on production workspace")
+  .option(
+    "-c, --command <cmd>",
+    "Override dev start command (default: npm run start:dev)"
+  )
+  .option("-b, --build", "Force docker image rebuild (use when dependencies changes)")
+  .action(devCommand);
 
 program
   .command("list")

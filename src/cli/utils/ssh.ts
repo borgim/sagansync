@@ -44,8 +44,10 @@ function buildCommonSSHArgs(opts: SSHOptions): string[] {
 
   if (strict === "no") {
     args.push("-o", `UserKnownHostsFile=${opts.userKnownHostsFile ?? "/dev/null"}`);
+    args.push("-o", "LogLevel=ERROR");
   } else if (opts.userKnownHostsFile) {
     args.push("-o", `UserKnownHostsFile=${opts.userKnownHostsFile}`);
+    args.push("-o", "LogLevel=ERROR");
   }
 
   if (opts.extraSSHOptions?.length) {

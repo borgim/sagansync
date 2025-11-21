@@ -3,6 +3,8 @@ import { Command } from "commander";
 import { initCommand } from "./commands/init";
 import { provisionCommand } from "./commands/provision";
 import { deployCommand } from "./commands/deploy";
+import { listCommand } from "./commands/list";
+import { removeCommand } from "./commands/remove";
 
 const program = new Command();
 
@@ -70,7 +72,22 @@ program
     "-f, --force",
     "Skip confirmation prompts (overwrite existing deploy)"
   )
+  .option("-v, --verbose", "Show detailed logs (podman stop/rm/etc)")
   .action(deployCommand);
+
+program
+  .command("list")
+  .alias("ls")
+  .description("List all active deployments from SaganSync")
+  .action(listCommand);
+
+program
+  .command("remove")
+  .alias("rm")
+  .description("Remove a deployment from SaganSync")
+  .option("--full", "Also remove the associated container image and volumes")
+  .option("-v, --verbose", "Show detailed logs")
+  .action(removeCommand);
 
 if (!process.argv.slice(2).length) {
   console.log(asciiArt);

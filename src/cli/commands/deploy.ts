@@ -10,11 +10,14 @@ import { getCurrentBranch, sanitizeWorkspaceName } from "../utils/git.js";
 type DeployOptions = {
   workspace?: string;
   force?: boolean;
+  verbose?: boolean;
 };
 
 export async function deployCommand(opts: DeployOptions): Promise<void> {
   const cfg = loadConfig();
   const projectName = path.basename(process.cwd());
+
+  const silence = opts.verbose ? "" : " > /dev/null 2>&1";
 
   // --- Determinar Workspace ---
   let workspaceName = opts.workspace;
@@ -65,9 +68,10 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
   // --- Trava de Segurança (Confirmação) ---
   if (!opts.force) {
     try {
-      // Verifica se container já existe
+      if (opts.verbose) console.log(chalk.gray("🔍 Checking existing deployment..."));
+      
       const checkResult = await sshExec(sshOpts, {
-        command: `export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin && podman ps -a --filter name=^/${containerName}$ --format "{{.Status}}"`,
+        command: `export PATH=$PATH:/usr/local/bin:/usr/sbin && podman ps -a --filter name=^/${containerName}$ --format "{{.Status}}"`,
         captureOutput: true,
       });
 
@@ -97,10 +101,7 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
         }
       }
     } catch (e) {
-      // Ignora erro de conexão na checagem inicial
-      console.error(chalk.red("Failed to check if container exists."));
-      console.error(e);
-      process.exit(1);
+      if (opts.verbose) console.error(chalk.red("Failed check:"), e);
     }
   }
 
@@ -110,7 +111,7 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
   if (deployDomain)
     console.log(chalk.gray(`   Target URL: https://${deployDomain}`));
 
-  // --- Empacotamento (Tarball) ---
+  // --- Empacotamento ---
   console.log(chalk.yellow("📦 Packing source code..."));
 
   const pack = tar.pack(process.cwd(), {
@@ -133,7 +134,7 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
   for await (const chunk of tarStream) chunks.push(Buffer.from(chunk));
   const fileBuffer = Buffer.concat(chunks);
 
-  // --- Upload and Build Remotely ---
+  // --- Upload and Build ---
   const remoteDir = `${
     cfg.remotePath || `/srv/${projectName}`
   }/${workspaceName}`;
@@ -168,15 +169,15 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
 
   const runCmd = `
     export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin &&
-    (podman network exists sagan-net || podman network create sagan-net) &&
-    podman stop ${containerName} > /dev/null 2>&1 || true && 
-    podman rm ${containerName} > /dev/null 2>&1 || true && 
+    (podman network exists sagan-net || podman network create sagan-net)${silence} &&
+    podman stop ${containerName}${silence} || true && 
+    podman rm ${containerName}${silence} || true && 
     podman run -d --restart always --name ${containerName} --network sagan-net -p 127.0.0.1::${internalPort} ${imageName}
   `;
 
   await sshExec(sshOpts, { command: runCmd });
 
-  // --- Discovery (Porta) ---
+  // --- Discovery ---
   console.log(chalk.gray("🔍 Discovering allocated port..."));
 
   const portResult = await sshExec(sshOpts, {
@@ -204,7 +205,7 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
     throw new Error(`Unexpected port format: ${portOutput}`);
   }
 
-  console.log(chalk.gray(`   Container mapped to host port: ${hostPort}`));
+  if (opts.verbose) console.log(chalk.gray(`   Container mapped to host port: ${hostPort}`));
 
   // --- Caddy Routing ---
   if (deployDomain) {
@@ -217,7 +218,7 @@ export async function deployCommand(opts: DeployOptions): Promise<void> {
     const confFile = `/etc/caddy/conf.d/${projectName}-${workspaceName}.caddy`;
 
     const updateCaddyCmd = `
-      echo '${caddyConfig}' | sudo tee ${confFile} > /dev/null && 
+      echo '${caddyConfig}' | sudo tee ${confFile}${silence} && 
       sudo systemctl reload caddy
     `;
 

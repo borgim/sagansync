@@ -56,14 +56,19 @@ program
     "-c, --clean",
     "Remove previous installations of Caddy and Podman before starting"
   )
+  .option(
+    "-f, --force",
+    "Skip confirmation prompts (overwrite existing provision)"
+  )
   .action(provisionCommand);
 
 program
   .command("deploy")
-  .description("Deploy the project to the VPS based on current git branch")
+  .description("Deploy the project to the VPS")
+  .option("-w, --workspace <name>", "Override workspace name")
   .option(
-    "-w, --workspace <name>",
-    "Override workspace name (default: auto-detected from branch)"
+    "-f, --force",
+    "Skip confirmation prompts (overwrite existing deploy)"
   )
   .action(deployCommand);
 

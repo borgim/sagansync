@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 
 export type SSHOptions = {
   host: string;
-  user?: string;              // ex.: "ubuntu"
-  port?: number;              // default: 22
-  identityFile?: string;      // ex.: "~/.ssh/id_ed25519"
+  user?: string;
+  port?: number;
+  identityFile?: string;
   strictHostKeyChecking?: "yes" | "no" | "accept-new";
   userKnownHostsFile?: string;
   extraSSHOptions?: string[];
@@ -12,11 +12,11 @@ export type SSHOptions = {
 
 export type SSHExecOptions = {
   command: string;
-  stdin?: string;
+  stdin?: string | Buffer;
   remoteEnv?: Record<string, string | number | boolean | undefined | null>;
   allocatePty?: boolean;
-  captureOutput?: boolean; // default: false (herda stdio)
-  timeoutMs?: number; // default: undefined (sem timeout)
+  captureOutput?: boolean;
+  timeoutMs?: number;
 };
 
 export type SSHExecResult = {
@@ -26,7 +26,7 @@ export type SSHExecResult = {
 };
 
 export type SCPUploadOptions = SSHOptions & {
-  recursive?: boolean; // default: true
+  recursive?: boolean;
 };
 
 function buildUserAtHost(opts: SSHOptions): string {

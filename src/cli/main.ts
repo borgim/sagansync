@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { initCommand } from "./commands/init";
 import { provisionCommand } from "./commands/provision";
+import { deployCommand } from "./commands/deploy";
 
 const program = new Command();
 
@@ -38,7 +39,9 @@ export const asciiArt = `
 
 program
   .name("sagansync")
-  .description("Instantly deploy your local project to a VPS — real-time sync, HTTPS, and zero CI/CD.")
+  .description(
+    "Instantly deploy your local project to a VPS — real-time sync, HTTPS, and zero CI/CD."
+  )
   .version("0.0.1");
 
 program
@@ -49,13 +52,24 @@ program
 program
   .command("provision")
   .description("Provision the VPS with Podman and Caddy via SSH")
-  .option("-c, --clean", "Remove previous installations of Caddy and Podman before starting")
+  .option(
+    "-c, --clean",
+    "Remove previous installations of Caddy and Podman before starting"
+  )
   .action(provisionCommand);
 
+program
+  .command("deploy")
+  .description("Deploy the project to the VPS based on current git branch")
+  .option(
+    "-w, --workspace <name>",
+    "Override workspace name (default: auto-detected from branch)"
+  )
+  .action(deployCommand);
 
-  if (!process.argv.slice(2).length) {
-    console.log(asciiArt);
-    program.outputHelp();
-  } else {
-    program.parse();
-  }
+if (!process.argv.slice(2).length) {
+  console.log(asciiArt);
+  program.outputHelp();
+} else {
+  program.parse();
+}

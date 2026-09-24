@@ -15,7 +15,7 @@ Pontos levantados na revisão final do plano 1 (`plans/2026-09-24-sagand-agent.m
 
 ## Validar no plano 3 (VM com Podman real)
 
-- [ ] **`Containerfile` vs `Dockerfile`:** qual o endpoint `/build` do Podman 4.3+ escolhe quando o projeto tem os dois.
+- [x] **`Containerfile` vs `Dockerfile`:** verificado na VM (Podman 4.9.3): com os dois presentes, o `Containerfile` é usado, como no Podman. Documentado no README.
 - [ ] **Containers de dev com `USER` não-root:** arquivos criados no bind mount ficam com um subuid, e o `RemoveAll` do `dev`/`remove` pode falhar com EACCES.
 - [ ] **Reinício do daemon no meio de um deploy** (`provision --upgrade`): o deploy é cortado após 15 s; confirmar que a reconciliação limpa tudo.
 
@@ -41,8 +41,3 @@ Pontos da revisão de `plans/2026-09-24-sagansync-cli.md` que ficaram para depoi
 
 - [ ] **`put` sem tamanho:** uma transferência interrompida (Ctrl+C, SSH caindo) grava o arquivo truncado. Correção: o `sagand put` receber o tamanho esperado e rejeitar corpos incompletos (agente + CLI).
 - [ ] **`put` não leva o modo do arquivo:** um script novo chega como 0644 no dev (arquivos existentes já mantêm o modo).
-
-### Para o plano 3
-
-- [ ] Adicionar `"prepublishOnly": "npm run build"` no `cli/package.json`, já que `dist/` não é versionado.
-- [ ] README: Windows não é suportado por enquanto (o OpenSSH do Windows não tem ControlMaster); Node 22.12 ou mais novo.

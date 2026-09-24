@@ -33,6 +33,16 @@ describe("listFiles", () => {
     expect(names(root)).toEqual([".dockerignore", ".gitignore", "keep.ts"]);
   });
 
+  test("excludes every .env* variant, like direnv's .envrc", () => {
+    const root = project({ ".envrc": "export TOKEN=1", ".env-production": "S", ".env_local": "S", "a.ts": "" });
+    expect(names(root)).toEqual(["a.ts"]);
+  });
+
+  test("keeps the Dockerfile even when .dockerignore lists it", () => {
+    const root = project({ ".dockerignore": "Dockerfile\nContainerfile\n.dockerignore\n*.md\n", "Dockerfile": "FROM node", "Containerfile": "FROM node", "README.md": "", "a.ts": "" });
+    expect(names(root)).toEqual([".dockerignore", "Containerfile", "Dockerfile", "a.ts"]);
+  });
+
   test("a .gitignore cannot re-include .env", () => {
     const root = project({ ".gitignore": "!.env\n!.env.production\n", ".env": "SECRET=1", ".env.production": "S", "a.ts": "" });
     expect(names(root)).toEqual([".gitignore", "a.ts"]);

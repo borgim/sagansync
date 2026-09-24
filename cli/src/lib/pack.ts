@@ -8,7 +8,12 @@ import { pack as tarPack, type Pack } from "tar-stream";
 // Never uploaded, whatever .gitignore or .dockerignore say (they cannot
 // re-include these with "!" rules). Secrets in .env files are set with
 // `sagansync env` instead.
-const ALWAYS = [".git", "node_modules", ".sagansync", ".env", ".env.*", ".DS_Store"];
+const ALWAYS = [".git", "node_modules", ".sagansync", ".env*", ".DS_Store"];
+
+// Always uploaded: Podman needs the build file in the context, and it
+// applies .dockerignore itself. Listing them in .dockerignore is a common
+// Docker pattern that must not break the build.
+const KEEP = new Set(["Dockerfile", "Containerfile", ".dockerignore"]);
 
 export type Matcher = (rel: string, isDir: boolean) => boolean;
 
@@ -22,6 +27,7 @@ export function ignoreMatcher(root: string): Matcher {
     if (fs.existsSync(p)) project.add(fs.readFileSync(p, "utf8"));
   }
   return (rel, isDir) => {
+    if (!isDir && KEEP.has(rel)) return false;
     const p = isDir ? `${rel}/` : rel;
     return always.ignores(p) || project.ignores(p);
   };

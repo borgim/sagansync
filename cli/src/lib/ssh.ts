@@ -86,12 +86,17 @@ export interface Remote {
   stream(args: string[], onLine: (line: string) => void, stdin?: Input): Promise<{ code: number; stderr: string }>;
 }
 
-// sshRemote talks to sagand through ssh. SAGANSYNC_SSH replaces the ssh
-// binary (tests use a fake one).
-export function sshRemote(t: Target, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"): Remote {
-  const start = (args: string[], stdin?: Input) => {
-    ensurePrivateDir(path.dirname(controlPath(t)));
-    const child = spawn(sshBin, [...sshArgs(t), remoteCommand(args)], { stdio: ["pipe", "pipe", "pipe"] });
+// A Shell runs raw commands over ssh (used with the admin account).
+export interface Shell {
+  run(command: string, stdin?: Input): Promise<RunResult>;
+  stream(command: string, onLine: (line: string) => void, stdin?: Input): Promise<{ code: number; stderr: string }>;
+}
+
+// sshShell spawns ssh with the given arguments followed by the command.
+function sshShell(args: string[], sshBin: string, before: () => void = () => {}): Shell {
+  const start = (command: string, stdin?: Input) => {
+    before();
+    const child = spawn(sshBin, [...args, command], { stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.on("error", () => {}); // the remote may exit before reading all input
     // If the local input fails (unreadable file, packing error), ssh must not
     // see a clean EOF: the remote would accept the truncated body as complete.
@@ -114,15 +119,15 @@ export function sshRemote(t: Target, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"
     return { child, done };
   };
   return {
-    async run(args, stdin) {
-      const { child, done } = start(args, stdin);
+    async run(command, stdin) {
+      const { child, done } = start(command, stdin);
       let stdout = "";
       child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
       const { code, stderr } = await done;
       return { code, stdout, stderr };
     },
-    async stream(args, onLine, stdin) {
-      const { child, done } = start(args, stdin);
+    async stream(command, onLine, stdin) {
+      const { child, done } = start(command, stdin);
       const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
       rl.on("line", onLine);
       const result = await done;
@@ -130,4 +135,38 @@ export function sshRemote(t: Target, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"
       return result;
     },
   };
+}
+
+// sshRemote talks to sagand through ssh. SAGANSYNC_SSH replaces the ssh
+// binary (tests use a fake one).
+export function sshRemote(t: Target, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"): Remote {
+  const shell = sshShell(sshArgs(t), sshBin, () => ensurePrivateDir(path.dirname(controlPath(t))));
+  return {
+    run: (args, stdin) => shell.run(remoteCommand(args), stdin),
+    stream: (args, onLine, stdin) => shell.stream(remoteCommand(args), onLine, stdin),
+  };
+}
+
+// AdminTarget is the account `sagansync provision` installs with (root or a
+// sudoer). Unlike the deploy key it may prompt for a passphrase or password,
+// and it never reuses the deploy key's control socket.
+export type AdminTarget = { host: string; port: number; user: string; identityFile?: string; knownHosts: string };
+
+export function adminSshArgs(t: AdminTarget): string[] {
+  return [
+    "-T",
+    "-p", String(t.port),
+    ...(t.identityFile ? ["-i", t.identityFile, "-o", "IdentitiesOnly=yes"] : []),
+    "-l", t.user,
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", `UserKnownHostsFile=${t.knownHosts}`,
+    "-o", "ControlMaster=no",
+    "-o", "ControlPath=none",
+    "-o", "LogLevel=ERROR",
+    "--", t.host,
+  ];
+}
+
+export function adminShell(t: AdminTarget, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"): Shell {
+  return sshShell(adminSshArgs(t), sshBin, () => fs.mkdirSync(path.dirname(t.knownHosts), { recursive: true, mode: 0o700 }));
 }

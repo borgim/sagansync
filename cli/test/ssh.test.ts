@@ -6,8 +6,10 @@ import { describe, expect, test } from "vitest";
 import { ensurePrivateDir, remoteCommand, shQuote, sshArgs, sshRemote, type Target } from "../src/lib/ssh.js";
 import { fakeSsh } from "./helpers/fakeSsh.js";
 
+// A private directory, like ~/.config/sagansync. Never the shared tmpdir:
+// on Linux that is /tmp itself, which the CLI rightly refuses.
 const target: Target = { host: "vps.example.com", port: 2222, user: "sagan", identityFile: "/keys/id",
-  knownHosts: "/cfg/known_hosts", controlDir: os.tmpdir() };
+  knownHosts: "/cfg/known_hosts", controlDir: fs.mkdtempSync(path.join(os.tmpdir(), "sgs-cfg-")) };
 
 describe("shQuote", () => {
   test.each([
@@ -61,11 +63,18 @@ describe("control socket path", () => {
     expect(p).not.toBe(pathOf(sshArgs({ ...target, controlDir: long, host: "other.test" })));
   });
 
-  test("refuses a shared directory someone else could control", () => {
+  test("refuses a directory others can write to, with a fix that keeps its contents", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sgs-cm-"));
     fs.chmodSync(dir, 0o777);
-    expect(() => ensurePrivateDir(dir)).toThrow("not private");
+    expect(() => ensurePrivateDir(dir)).toThrow(`chmod 700 ${dir}`);
+    expect(() => ensurePrivateDir(dir)).not.toThrow("remove");
     fs.chmodSync(dir, 0o700);
+    expect(() => ensurePrivateDir(dir)).not.toThrow();
+  });
+
+  test("accepts a directory others can only read (the socket itself is 0600)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sgs-cm-"));
+    fs.chmodSync(dir, 0o755);
     expect(() => ensurePrivateDir(dir)).not.toThrow();
   });
 });

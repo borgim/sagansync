@@ -42,15 +42,19 @@ export function controlPath(t: Target): string {
   return path.join(`/tmp/sagansync-${process.getuid?.() ?? "user"}`, id);
 }
 
-// ensurePrivateDir creates dir (mode 0700) and refuses one that is a symlink,
-// belongs to someone else, or is open to others, since it will hold the ssh
-// control socket.
+// ensurePrivateDir creates dir (mode 0700) for the ssh control socket and
+// refuses one that is a symlink, belongs to someone else, or that other users
+// can write to (they could swap the socket). Read access is harmless: ssh
+// creates the socket itself with mode 0600.
 export function ensurePrivateDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const st = fs.lstatSync(dir);
   const mine = process.getuid === undefined || st.uid === process.getuid();
-  if (!st.isDirectory() || !mine || (st.mode & 0o077) !== 0) {
-    throw new Error(`${dir} is not private (it must be a directory owned by you with mode 0700); remove it and try again`);
+  if (!st.isDirectory() || !mine) {
+    throw new Error(`${dir} must be a directory owned by you, since it holds the ssh connection socket. Move it aside and try again.`);
+  }
+  if ((st.mode & 0o022) !== 0) {
+    throw new Error(`${dir} can be modified by other users, so it cannot hold the ssh connection socket. Fix it with: chmod 700 ${dir}`);
   }
 }
 

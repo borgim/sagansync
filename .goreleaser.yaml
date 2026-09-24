@@ -1,0 +1,34 @@
+# Builds the sagand release that `sagansync provision` downloads:
+#   sagand_<version>_linux_<arch>.tar.gz (the binary only) and checksums.txt.
+# Run by .github/workflows/release.yml when a v* tag is pushed.
+version: 2
+project_name: sagand
+
+builds:
+  - id: sagand
+    dir: agent
+    main: ./cmd/sagand
+    binary: sagand
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+
+archives:
+  - id: sagand
+    formats: [tar.gz]
+    name_template: "sagand_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [none*] # the binary only
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: github-native
+
+release:
+  github:
+    owner: borgim
+    name: sagansync

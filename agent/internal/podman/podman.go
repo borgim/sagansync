@@ -146,6 +146,11 @@ type namedVolume struct {
 	Dest string `json:"Dest"`
 }
 
+type logConfig struct {
+	Driver string `json:"driver"`
+	Size   int64  `json:"size"` // bytes; k8s-file logs are otherwise unbounded
+}
+
 type specgen struct {
 	Name            string            `json:"name"`
 	Image           string            `json:"image"`
@@ -156,13 +161,17 @@ type specgen struct {
 	Mounts          []mount           `json:"mounts,omitempty"`
 	Volumes         []namedVolume     `json:"volumes,omitempty"`
 	NoNewPrivileges bool              `json:"no_new_privileges"`
+	LogConfig       logConfig         `json:"log_configuration"`
 }
 
 func (c *Client) Create(ctx context.Context, spec runtime.ContainerSpec) error {
 	body := specgen{
 		Name: spec.Name, Image: spec.Image, Command: spec.Command, Env: spec.Env, Labels: spec.Labels,
 		NoNewPrivileges: true,
-		PortMappings:    []portMapping{{HostIP: "127.0.0.1", ContainerPort: uint16(spec.InternalPort), Protocol: "tcp"}},
+		// Rootless Podman defaults to journald on systemd hosts, and the sagan
+		// user cannot read the journal, so `podman logs` came back empty.
+		LogConfig:    logConfig{Driver: "k8s-file", Size: 10 << 20},
+		PortMappings: []portMapping{{HostIP: "127.0.0.1", ContainerPort: uint16(spec.InternalPort), Protocol: "tcp"}},
 	}
 	for _, b := range spec.Binds {
 		body.Mounts = append(body.Mounts, mount{Destination: b.Dest, Source: b.Source, Type: "bind", Options: []string{"rbind", "rw"}})

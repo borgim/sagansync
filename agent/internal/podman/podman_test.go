@@ -80,6 +80,8 @@ func TestCreateSendsSpec(t *testing.T) {
 			"command":           body["command"].([]any)[0] == "npm",
 			"bind mount":        body["mounts"].([]any)[0].(map[string]any)["destination"] == "/app",
 			"named volume":      body["volumes"].([]any)[0].(map[string]any)["Dest"] == "/app/node_modules",
+			"k8s-file logs":     body["log_configuration"].(map[string]any)["driver"] == "k8s-file",
+			"log size cap":      body["log_configuration"].(map[string]any)["size"] == float64(10<<20),
 		}
 		for name, ok := range checks {
 			if !ok {

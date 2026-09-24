@@ -7,7 +7,8 @@
     "sagansync": "dist/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts"
   ],
   "engines": {
     "node": ">=22.12"
@@ -15,9 +16,10 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build",
+    "prepack": "cp ../README.md ../LICENSE ."
   },
-  "repository": "github:borgim/sagansync",
   "author": "Pedro Borges",
   "license": "MIT",
   "dependencies": {
@@ -32,5 +34,14 @@
     "tsup": "^8.5.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/borgim/sagansync.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/borgim/sagansync#readme",
+  "bugs": {
+    "url": "https://github.com/borgim/sagansync/issues"
   }
 }

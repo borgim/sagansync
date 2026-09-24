@@ -1,3 +1,6 @@
 node_modules
 .sagansync
 dist
+# copied from the repository root by "npm pack"
+cli/README.md
+cli/LICENSE

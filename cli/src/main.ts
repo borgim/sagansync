@@ -1,5 +1,5 @@
 import { confirm } from "@inquirer/prompts";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import type { Ctx } from "./commands/context.js";
 import { deploy } from "./commands/deploy.js";
 import { dev } from "./commands/dev.js";
@@ -7,10 +7,11 @@ import { envList, envSet, envUnset } from "./commands/env.js";
 import { askInteractively, init, sshKeygen } from "./commands/init.js";
 import { list } from "./commands/list.js";
 import { logs } from "./commands/logs.js";
+import { adminTarget, provision } from "./commands/provision.js";
 import { remove } from "./commands/remove.js";
 import { loadConfig } from "./lib/config.js";
 import { exitOnBrokenPipe, report } from "./lib/report.js";
-import { sshRemote, targetFor } from "./lib/ssh.js";
+import { adminShell, sshRemote, targetFor } from "./lib/ssh.js";
 import { VERSION } from "./version.js";
 
 function ctx(): Ctx {
@@ -32,6 +33,20 @@ const program = new Command()
 program.command("init").description("configure this project for a VPS")
   .action(async () => {
     await init(process.cwd(), { ask: askInteractively, confirmOverwrite: () => ask("Overwrite the existing .sagansync/config.json?"), keygen: sshKeygen, out: (s) => console.log(s) });
+  });
+
+program.command("provision").description("install or upgrade sagand on the VPS (uses an admin account once)")
+  .option("--admin <user@host>", "account with root or passwordless sudo (default: root@<host>)")
+  .option("--admin-key <path>", "SSH key for the admin account")
+  .option("--upgrade", "only replace the agent and restart it, keeping its settings")
+  .option("--acme-email <email>", "email for Let's Encrypt expiry notices")
+  .option("--remove-caddy", "remove Caddy left behind by an older SaganSync")
+  .option("--agent-binary <path>", "install this sagand binary instead of downloading the release")
+  .addOption(new Option("--acme-ca <url>", "ACME directory (tests)").hideHelp())
+  .addOption(new Option("--acme-root-ca <path>", "extra CA for the ACME server (tests)").hideHelp())
+  .action(async (o) => {
+    const c = ctx();
+    await provision(c, o, { shell: adminShell(adminTarget(c.config, o)) });
   });
 
 program.command("deploy").description("build and release the current branch with zero downtime")

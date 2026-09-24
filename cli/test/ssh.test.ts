@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { describe, expect, test } from "vitest";
-import { ensurePrivateDir, remoteCommand, shQuote, sshArgs, sshRemote, type Target } from "../src/lib/ssh.js";
+import { adminSshArgs, ensurePrivateDir, remoteCommand, shQuote, sshArgs, sshRemote, type Target } from "../src/lib/ssh.js";
 import { fakeSsh } from "./helpers/fakeSsh.js";
 
 // A private directory, like ~/.config/sagansync. Never the shared tmpdir:
@@ -76,6 +76,25 @@ describe("control socket path", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sgs-cm-"));
     fs.chmodSync(dir, 0o755);
     expect(() => ensurePrivateDir(dir)).not.toThrow();
+  });
+});
+
+describe("adminSshArgs", () => {
+  const admin = { host: "203.0.113.7", port: 22, user: "ubuntu", knownHosts: "/cfg/known_hosts" };
+
+  test("logs in as the admin, verifies the host key and never shares a connection", () => {
+    const args = adminSshArgs(admin);
+    expect(args).toEqual(expect.arrayContaining(["-l", "ubuntu", "StrictHostKeyChecking=accept-new", "UserKnownHostsFile=/cfg/known_hosts", "ControlMaster=no"]));
+    expect(args.slice(-2)).toEqual(["--", "203.0.113.7"]);
+  });
+
+  test("may prompt for a password or passphrase, unlike the deploy key", () => {
+    expect(adminSshArgs(admin)).not.toContain("BatchMode=yes");
+  });
+
+  test("uses only the given key when there is one", () => {
+    expect(adminSshArgs({ ...admin, identityFile: "/k" })).toEqual(expect.arrayContaining(["-i", "/k", "IdentitiesOnly=yes"]));
+    expect(adminSshArgs(admin)).not.toContain("-i");
   });
 });
 

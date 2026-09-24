@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -54,6 +55,14 @@ func loadDaemonConfig(path string) (daemonConfig, error) {
 		return cfg, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// publicServer builds an internet-facing server. Without IdleTimeout, idle
+// keep-alive connections would stay open forever, letting anyone exhaust the
+// daemon's file descriptors.
+func publicServer(addr string, h http.Handler, tlsCfg *tls.Config) *http.Server {
+	return &http.Server{Addr: addr, Handler: h, TLSConfig: tlsCfg,
+		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 }
 
 func runDaemon(args []string, stderr io.Writer) int {
@@ -112,8 +121,8 @@ func serve(ctx context.Context, cfg daemonConfig, logger *log.Logger) error {
 		}
 	}()
 
-	httpSrv := &http.Server{Addr: cfg.HTTPAddr, Handler: tlsm.HTTPHandler(proxy.RedirectHandler()), ReadHeaderTimeout: 10 * time.Second}
-	httpsSrv := &http.Server{Addr: cfg.HTTPSAddr, Handler: router, TLSConfig: tlsm.TLSConfig(), ReadHeaderTimeout: 10 * time.Second}
+	httpSrv := publicServer(cfg.HTTPAddr, tlsm.HTTPHandler(proxy.RedirectHandler()), nil)
+	httpsSrv := publicServer(cfg.HTTPSAddr, router, tlsm.TLSConfig())
 	apiSrv := &http.Server{Handler: api.NewServer(dep, version).Handler(), ReadHeaderTimeout: 10 * time.Second}
 	l, err := api.Listen(cfg.Socket)
 	if err != nil {

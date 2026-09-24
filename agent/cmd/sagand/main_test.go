@@ -154,3 +154,10 @@ func TestLoadDaemonConfig(t *testing.T) {
 		t.Fatal("broken config accepted")
 	}
 }
+
+func TestPublicServersTimeOutIdleConnections(t *testing.T) {
+	s := publicServer(":443", http.NotFoundHandler(), nil)
+	if s.IdleTimeout <= 0 || s.ReadHeaderTimeout <= 0 {
+		t.Fatalf("IdleTimeout = %v, ReadHeaderTimeout = %v; both must be set on internet-facing servers", s.IdleTimeout, s.ReadHeaderTimeout)
+	}
+}

@@ -54,8 +54,8 @@ type Fake struct {
 	removedVolumes []string
 
 	// Test knobs: set them before the code under test runs.
-	BuildErr   error
-	BuildLines []string
+	BuildErr    error
+	BuildLines  []string
 	BuildHook   func(tag string)
 	Behave      func(spec runtime.ContainerSpec) Behavior
 	InspectHook func(name string) // called before Inspect, outside the lock

@@ -7,7 +7,8 @@
     "sagansync": "dist/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts"
   ],
   "engines": {
     "node": ">=22.12"
@@ -15,7 +16,9 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build",
+    "prepack": "cp ../README.md ../LICENSE ."
   },
   "repository": "github:borgim/sagansync",
   "author": "Pedro Borges",

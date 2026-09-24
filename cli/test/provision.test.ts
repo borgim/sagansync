@@ -165,6 +165,16 @@ describe("provision", () => {
     await expect(provision(testCtx(new FakeRemote()), { agentBinary: bin }, { shell })).rejects.toMatchObject({ hint: expect.stringContaining("--admin root@") });
   });
 
+  test.each([
+    ["sudo-rs (Ubuntu 25.10+)", "sudo: interactive authentication is required\n"],
+    ["no sudo installed", "sh: 1: sudo: not found\n"],
+  ])("explains %s", async (_name, stderr) => {
+    const bin = path.join(home, "sagand");
+    fs.writeFileSync(bin, elf(0xb7));
+    const shell = new FakeShell((cmd) => (cmd === "uname -m" ? { stdout: "aarch64" } : { code: 1, stderr }));
+    await expect(provision(testCtx(new FakeRemote()), { agentBinary: bin }, { shell })).rejects.toMatchObject({ hint: expect.stringContaining("--admin root@") });
+  });
+
   test("shows provision.sh's own error message", async () => {
     const bin = path.join(home, "sagand");
     fs.writeFileSync(bin, elf(0xb7));

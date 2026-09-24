@@ -142,7 +142,8 @@ export function remoteScript(flags: string[]): string {
 
 function provisionError(stderr: string): CliError {
   const text = stderr.trim();
-  if (/sudo: (a password is required|a terminal is required)/.test(text)) {
+  // Classic sudo, sudo-rs (default on Ubuntu 25.10+) and servers without sudo.
+  if (/sudo: (a password is required|a terminal is required|interactive authentication is required)|sudo: (command )?not found/.test(text)) {
     return new CliError("The admin account needs root or passwordless sudo.", 1, "Use --admin root@<host>, or allow passwordless sudo for that user.");
   }
   const last = text.split("\n").filter((l) => l.startsWith("✖")).pop();

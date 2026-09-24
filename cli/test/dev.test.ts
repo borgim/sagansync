@@ -40,7 +40,7 @@ describe("createSyncer", () => {
 test("createSyncer does not send a file it cannot read", async () => {
   // Real ssh plumbing: the bug only shows when the read fails mid-pipe.
   const ssh = fakeSsh({ code: 0 });
-  const target: Target = { host: "vps.test", port: 22, user: "sagan", identityFile: "/k", knownHosts: "/kh", controlDir: os.tmpdir() };
+  const target: Target = { host: "vps.test", port: 22, user: "sagan", identityFile: "/k", knownHosts: "/kh", controlDir: fs.mkdtempSync(path.join(os.tmpdir(), "sgs-cfg-")) };
   const ctx = testCtx(new FakeRemote(), projectDir({ "locked.ts": "secret" }));
   ctx.remote = sshRemote(target, ssh.bin);
   fs.chmodSync(path.join(ctx.cwd, "locked.ts"), 0o000);

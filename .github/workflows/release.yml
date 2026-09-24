@@ -6,6 +6,9 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -15,6 +18,21 @@ jobs:
         run: |
           want="$(node -p "require('./cli/package.json').version")"
           test "${GITHUB_REF_NAME#v}" = "$want" || { echo "tag $GITHUB_REF_NAME does not match version $want"; exit 1; }
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Nothing is published unless both suites pass on the tagged commit. The
+      # CLI suite also checks that src/version.ts matches package.json.
+      - name: Agent tests
+        working-directory: agent
+        run: go test -race ./...
+      - name: CLI tests
+        working-directory: cli
+        run: npm ci && npm test
 
   agent:
     needs: check

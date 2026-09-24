@@ -41,3 +41,17 @@ Pontos da revisão de `plans/2026-09-24-sagansync-cli.md` que ficaram para depoi
 
 - [ ] **`put` sem tamanho:** uma transferência interrompida (Ctrl+C, SSH caindo) grava o arquivo truncado. Correção: o `sagand put` receber o tamanho esperado e rejeitar corpos incompletos (agente + CLI).
 - [ ] **`put` não leva o modo do arquivo:** um script novo chega como 0644 no dev (arquivos existentes já mantêm o modo).
+
+## Provision, teste ponta a ponta e release (revisão final do plano 3)
+
+Pontos da revisão de `plans/2026-09-24-sagansync-release.md` que ficaram para depois.
+
+- [ ] **`provision` sem `--upgrade` reescreve o `config.json` do daemon:** um reparo sem `--acme-email` apaga o e-mail configurado antes. Mesclar as flags na configuração existente, ou documentar (`cli/scripts/provision.sh`).
+- [ ] **Todo `provision` reinicia o `sagand`**, então os sites ficam fora do ar por alguns segundos durante reparo ou upgrade (o agente reconcilia antes de abrir as portas). Documentar no README, ou abrir as portas antes de reconciliar (`agent/cmd/sagand/daemon.go`).
+- [ ] **A checagem de prontidão pode passar com um daemon que ainda vai falhar** ao abrir as portas 80/443, porque o socket da API é criado antes. Exigir duas checagens seguidas, ou abrir as portas antes do socket (`provision.sh`, `daemon.go`).
+- [ ] **Erros crus no `provision.sh`:** `--upgrade` num servidor sem Podman (`podman: command not found`); `VERSION_ID` ausente (Debian sid) com `set -u`; o erro do `systemctl --user` é descartado e vira "unknown error".
+- [ ] **O sha256 só protege contra corrupção:** o `checksums.txt` vem do mesmo release que o binário, então não detecta um release substituído, e a dica fala em "adulterado". Embutir os hashes no pacote npm (o job da CLI roda depois do release) ou usar attestations. O `fetch` também não tem timeout, e o binário baixado não passa pelo `checkBinary` (`cli/src/commands/provision.ts`).
+- [ ] **Release:** fixar o `goreleaser-action` por SHA; uma tag de pré-release (`v0.2.0-rc.1`) seria publicada no npm como `latest`; documentar que, se o npm falhar depois do release do GitHub, basta rodar de novo só o job `cli`.
+- [ ] **README:** firewalls do provedor (security groups) precisam liberar 80/443; `AllowUsers`/`AllowGroups` no sshd bloqueia o `sagan`; um admin que entra com senha digita duas vezes.
+- [ ] **Teste ponta a ponta:** a checagem do deploy quebrado aceita `exit=1` como substring (também casaria `exit=10`/`126`); a do Podman procura a substring `PASS`; a imagem do Pebble está em `:latest`; o processo do `dev` não é encerrado se o script abortar no meio; os casos "tar com `../`" e "comando vazio" da spec 12.4.5 não estão no teste (o do tar é coberto pelos testes do Go).
+- [ ] **Contas com `USER` não-root no `dev` e reinício do daemon no meio de um deploy** continuam em aberto (da seção do agente).

@@ -1,7 +1,9 @@
+import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import { describe, expect, test } from "vitest";
-import { remoteCommand, shQuote, sshArgs, sshRemote, type Target } from "../src/lib/ssh.js";
+import { ensurePrivateDir, remoteCommand, shQuote, sshArgs, sshRemote, type Target } from "../src/lib/ssh.js";
 import { fakeSsh } from "./helpers/fakeSsh.js";
 
 const target: Target = { host: "vps.example.com", port: 2222, user: "sagan", identityFile: "/keys/id",
@@ -23,7 +25,7 @@ describe("shQuote", () => {
 });
 
 describe("sshArgs", () => {
-  const args = sshArgs(target);
+  const args = sshArgs({ ...target, controlDir: "/cfg" });
   test("verifies host keys and never disables checking", () => {
     expect(args.join(" ")).toContain("StrictHostKeyChecking=accept-new");
     expect(args.join(" ")).toContain("UserKnownHostsFile=/cfg/known_hosts");
@@ -40,6 +42,31 @@ describe("sshArgs", () => {
   test("ends with -- and the host so the host can never be read as an option", () => {
     expect(args.slice(-2)).toEqual(["--", "vps.example.com"]);
     expect(args.slice(args.indexOf("-p"), args.indexOf("-p") + 2)).toEqual(["-p", "2222"]);
+  });
+});
+
+describe("control socket path", () => {
+  const pathOf = (args: string[]) => args.find((a) => a.startsWith("ControlPath="))!.slice("ControlPath=".length);
+
+  test("uses the config dir when the socket path fits", () => {
+    expect(pathOf(sshArgs({ ...target, controlDir: "/Users/pedro/.config/sagansync" }))).toBe("/Users/pedro/.config/sagansync/cm-%C");
+  });
+
+  test("falls back to a short private path for long home directories", () => {
+    const long = `/Users/${"firstname.lastname"}/.config/sagansync`;
+    const p = pathOf(sshArgs({ ...target, controlDir: long }));
+    expect(p.startsWith(long)).toBe(false);
+    // ssh listens on "<path>.<16 random chars>"; macOS allows 103 bytes.
+    expect(p.length + 17).toBeLessThanOrEqual(103);
+    expect(p).not.toBe(pathOf(sshArgs({ ...target, controlDir: long, host: "other.test" })));
+  });
+
+  test("refuses a shared directory someone else could control", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sgs-cm-"));
+    fs.chmodSync(dir, 0o777);
+    expect(() => ensurePrivateDir(dir)).toThrow("not private");
+    fs.chmodSync(dir, 0o700);
+    expect(() => ensurePrivateDir(dir)).not.toThrow();
   });
 });
 

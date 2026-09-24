@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -29,6 +30,30 @@ export function remoteCommand(args: string[]): string {
   return ["sagand", ...args].map(shQuote).join(" ");
 }
 
+// ssh listens on "<ControlPath>.<16 random chars>" and %C expands to 40 hex
+// characters. Unix socket paths are limited to 103 bytes on macOS, so long
+// home directories fall back to a short per-user directory in /tmp.
+const SOCKET_LIMIT = 103;
+
+export function controlPath(t: Target): string {
+  const preferred = path.join(t.controlDir, "cm-%C");
+  if (preferred.length - 2 + 40 + 17 <= SOCKET_LIMIT) return preferred;
+  const id = createHash("sha256").update(`${t.user}@${t.host}:${t.port}`).digest("hex").slice(0, 16);
+  return path.join(`/tmp/sagansync-${process.getuid?.() ?? "user"}`, id);
+}
+
+// ensurePrivateDir creates dir (mode 0700) and refuses one that is a symlink,
+// belongs to someone else, or is open to others, since it will hold the ssh
+// control socket.
+export function ensurePrivateDir(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const st = fs.lstatSync(dir);
+  const mine = process.getuid === undefined || st.uid === process.getuid();
+  if (!st.isDirectory() || !mine || (st.mode & 0o077) !== 0) {
+    throw new Error(`${dir} is not private (it must be a directory owned by you with mode 0700); remove it and try again`);
+  }
+}
+
 export function sshArgs(t: Target): string[] {
   return [
     "-T",
@@ -40,7 +65,7 @@ export function sshArgs(t: Target): string[] {
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", `UserKnownHostsFile=${t.knownHosts}`,
     "-o", "ControlMaster=auto",
-    "-o", `ControlPath=${path.join(t.controlDir, "cm-%C")}`,
+    "-o", `ControlPath=${controlPath(t)}`,
     "-o", "ControlPersist=60s",
     "-o", "LogLevel=ERROR",
     "--", t.host,
@@ -61,7 +86,7 @@ export interface Remote {
 // binary (tests use a fake one).
 export function sshRemote(t: Target, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"): Remote {
   const start = (args: string[], stdin?: Input) => {
-    fs.mkdirSync(t.controlDir, { recursive: true, mode: 0o700 });
+    ensurePrivateDir(path.dirname(controlPath(t)));
     const child = spawn(sshBin, [...sshArgs(t), remoteCommand(args)], { stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.on("error", () => {}); // the remote may exit before reading all input
     // If the local input fails (unreadable file, packing error), ssh must not

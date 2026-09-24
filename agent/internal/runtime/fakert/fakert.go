@@ -56,8 +56,9 @@ type Fake struct {
 	// Test knobs: set them before the code under test runs.
 	BuildErr   error
 	BuildLines []string
-	BuildHook  func(tag string)
-	Behave     func(spec runtime.ContainerSpec) Behavior
+	BuildHook   func(tag string)
+	Behave      func(spec runtime.ContainerSpec) Behavior
+	InspectHook func(name string) // called before Inspect, outside the lock
 }
 
 var _ runtime.Runtime = (*Fake)(nil)
@@ -163,6 +164,9 @@ func (f *Fake) Remove(_ context.Context, name string) error {
 }
 
 func (f *Fake) Inspect(_ context.Context, name string) (runtime.ContainerInfo, error) {
+	if f.InspectHook != nil {
+		f.InspectHook(name)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	e, ok := f.containers[name]

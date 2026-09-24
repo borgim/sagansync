@@ -132,3 +132,41 @@ func TestReconcileSkipsWorkspaceWithOperationInProgress(t *testing.T) {
 		t.Fatal("orphan survived once the workspace was free")
 	}
 }
+
+// A deploy that finishes while Reconcile is busy with another workspace must
+// not be rolled back by Reconcile's earlier snapshot of the state.
+func TestReconcileDoesNotRollBackDeployFinishedDuringPass(t *testing.T) {
+	h := testdeploy.New(t)
+	ctx := context.Background()
+	for _, ws := range []string{"alpha", "beta"} {
+		if _, err := h.Deploy(t, testdeploy.Request(ws)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alpha, _ := h.State.Get("app", "alpha")
+	blocked, unblock := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	h.RT.InspectHook = func(name string) {
+		if name == alpha.Container {
+			once.Do(func() { close(blocked); <-unblock })
+		}
+	}
+	errc := make(chan error, 1)
+	go func() { errc <- h.D.Reconcile(ctx) }()
+	<-blocked
+	if _, err := h.Deploy(t, testdeploy.Request("beta")); err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := h.State.Get("app", "beta")
+	close(unblock)
+	if err := <-errc; err != nil {
+		t.Fatal(err)
+	}
+	after, _ := h.State.Get("app", "beta")
+	if after.Release != fresh.Release {
+		t.Fatalf("Reconcile rolled beta back from %s to %s", fresh.Release, after.Release)
+	}
+	if c, ok := h.RT.Container(fresh.Container); !ok || !c.Running {
+		t.Fatal("Reconcile removed the freshly deployed container")
+	}
+}

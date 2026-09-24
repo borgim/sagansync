@@ -19,8 +19,13 @@ func (d *Deployer) Reconcile(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		if err := d.reconcileOne(ctx, e); err != nil {
-			errs = append(errs, fmt.Errorf("%s/%s: %w", e.Project, e.Workspace, err))
+		// Re-read under the lock: the snapshot may predate a deploy or remove
+		// that finished while this pass was busy with other workspaces.
+		if cur, ok := d.st.Get(e.Project, e.Workspace); ok {
+			e.WS = cur
+			if err := d.reconcileOne(ctx, e); err != nil {
+				errs = append(errs, fmt.Errorf("%s/%s: %w", e.Project, e.Workspace, err))
+			}
 		}
 		unlock()
 	}

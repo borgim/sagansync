@@ -30,6 +30,7 @@ fail() { echo "✖ $*" >&2; exit 1; }
 as_sagan() { runuser -u sagan -- "$@"; }
 # write_as_sagan <source> <destination>
 write_as_sagan() {
+  # shellcheck disable=SC2016 # $1 expands in the inner shell, which runs as sagan
   as_sagan sh -c 'umask 077; if [ -L "$1" ]; then echo "✖ $1 is a symlink; refusing to write through it. Remove it and run provision again." >&2; exit 1; fi; cat > "$1"' sh "$2" <"$1"
 }
 
@@ -117,6 +118,7 @@ fi
 ssh-keygen -l -f "$BUNDLE/deploy.pub" >/dev/null 2>&1 || fail "deploy.pub is not a valid SSH public key."
 key=$(head -n 1 "$BUNDLE/deploy.pub")
 line="command=\"/usr/local/bin/sagand gateway\",restrict $key"
+# shellcheck disable=SC2016 # $1 expands in the inner shell, which runs as sagan
 as_sagan sh -c '
   umask 077
   cd /home/sagan || exit 1

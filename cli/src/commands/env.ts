@@ -8,19 +8,48 @@ const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export type EnvOptions = { workspace?: string };
 
-// parseDotenv reads KEY=VALUE lines. Blank lines and # comments are skipped,
-// an optional "export " prefix is allowed, and matching single or double
-// quotes around the value are removed ("\n" inside double quotes is a newline).
+const restIsComment = (rest: string) => {
+  const r = rest.trim();
+  return r === "" || r.startsWith("#");
+};
+
+// parseValue follows dotenv: double quotes allow \n, \t and \" escapes,
+// single quotes are literal, and in unquoted values " #" starts a comment.
+// It returns null when a quote is never closed or text follows it.
+function parseValue(raw: string): string | null {
+  const v = raw.trim();
+  if (v.startsWith('"')) {
+    let out = "";
+    let i = 1;
+    for (; i < v.length && v[i] !== '"'; i++) {
+      if (v[i] === "\\" && i + 1 < v.length) {
+        const next = v[++i]!;
+        out += next === "n" ? "\n" : next === "t" ? "\t" : next === "r" ? "\r" : next;
+      } else {
+        out += v[i];
+      }
+    }
+    return i < v.length && restIsComment(v.slice(i + 1)) ? out : null;
+  }
+  if (v.startsWith("'")) {
+    const end = v.indexOf("'", 1);
+    return end > 0 && restIsComment(v.slice(end + 1)) ? v.slice(1, end) : null;
+  }
+  const comment = v.search(/\s#/);
+  return (comment >= 0 ? v.slice(0, comment) : v).trim();
+}
+
+// parseDotenv reads KEY=VALUE lines. Blank lines and # comments are skipped
+// and an optional "export " prefix is allowed. Multi-line values are not
+// supported and are reported as errors instead of being guessed.
 export function parseDotenv(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   text.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();
     if (!line || line.startsWith("#")) return;
-    const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (!m) throw new CliError(`Line ${i + 1} is not KEY=VALUE: ${raw}`, 2);
-    let value = m[2] ?? "";
-    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1).replaceAll("\\n", "\n");
-    else if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+    const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(line);
+    const value = m ? parseValue(m[2] ?? "") : null;
+    if (!m || value === null) throw new CliError(`Line ${i + 1} is not KEY=VALUE: ${raw}`, 2);
     out[m[1]!] = value;
   });
   return out;

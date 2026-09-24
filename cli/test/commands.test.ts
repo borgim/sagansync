@@ -104,6 +104,20 @@ describe("env", () => {
     expect(() => parseDotenv("not a pair")).toThrow("Line 1");
   });
 
+  test("parseDotenv handles inline comments and quotes like dotenv", () => {
+    const text = [
+      "A=1 # comment",
+      'B="x y" # c',
+      "C='a # not a comment'",
+      "D=url#fragment",
+      'E="say \\"hi\\""',
+      "F=  spaced value  ",
+    ].join("\n");
+    expect(parseDotenv(text)).toEqual({ A: "1", B: "x y", C: "a # not a comment", D: "url#fragment", E: 'say "hi"', F: "spaced value" });
+    expect(() => parseDotenv('G="never closed')).toThrow("Line 1");
+    expect(() => parseDotenv('H="x" trailing')).toThrow("Line 1");
+  });
+
   test("parsePairs keeps everything after the first =", () => {
     expect(parsePairs(["URL=postgres://u:p@h/db?a=b"])).toEqual({ URL: "postgres://u:p@h/db?a=b" });
     expect(() => parsePairs(["=x"])).toThrow("KEY=VALUE");

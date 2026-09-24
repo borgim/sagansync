@@ -129,3 +129,54 @@ func TestFileOpsDoNotFollowSymlinksOutOfRoot(t *testing.T) {
 	}
 	assertFile(t, victim, "keep")
 }
+
+// swapToSymlink replaces root/dir with a symlink to outside once the path
+// checks have passed, the way a process inside a dev container could.
+func swapToSymlink(t *testing.T, root, dir, outside string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	afterCheck = func() {
+		os.RemoveAll(filepath.Join(root, dir))
+		os.Symlink(outside, filepath.Join(root, dir))
+	}
+	t.Cleanup(func() { afterCheck = func() {} })
+}
+
+func TestWriteFileSurvivesSymlinkSwapRace(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	swapToSymlink(t, root, "src", outside)
+	_ = WriteFile(root, "src/app.js", strings.NewReader("x"))
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Fatalf("wrote %v outside the root", entries[0].Name())
+	}
+}
+
+func TestRemoveFileSurvivesSymlinkSwapRace(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	victim := filepath.Join(outside, "app.js")
+	if err := os.WriteFile(victim, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	swapToSymlink(t, root, "src", outside)
+	_ = RemoveFile(root, "src/app.js")
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("file outside the root was removed: %v", err)
+	}
+}
+
+func TestWriteFileKeepsExistingMode(t *testing.T) {
+	root := t.TempDir()
+	script := filepath.Join(root, "start.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFile(root, "start.sh", strings.NewReader("#!/bin/sh\necho hi\n")); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(script)
+	if fi.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v, want 0755", fi.Mode().Perm())
+	}
+}

@@ -75,26 +75,44 @@ func Prune(releasesDir string, keep int, current string) ([]string, error) {
 	return removed, nil
 }
 
-// WriteFile atomically replaces root/rel with the content of r.
+// afterCheck runs between path validation and the filesystem changes. Tests
+// use it to swap a directory for a symlink, like a racing container would.
+var afterCheck = func() {}
+
+// WriteFile atomically replaces root/rel with the content of r, keeping the
+// mode of the file it replaces. The dev container can modify root while this
+// runs, so every filesystem operation goes through os.Root, which refuses to
+// leave root even if a directory is swapped for a symlink mid-way.
 func WriteFile(root, rel string, r io.Reader) error {
-	if err := validate.RelPath("path", rel); err != nil {
-		return err
-	}
-	realRoot, err := filepath.EvalSymlinks(root)
+	realRoot, relOS, err := resolve(root, rel)
 	if err != nil {
 		return err
 	}
-	target := filepath.Join(realRoot, filepath.FromSlash(rel))
-	if err := safeParent(realRoot, target); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(target), ".sagan-put-*")
+	afterCheck()
+	rt, err := os.OpenRoot(realRoot)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	n, err := io.Copy(tmp, io.LimitReader(r, DefaultLimits.MaxBytes+1))
-	if cerr := tmp.Close(); err == nil {
+	defer rt.Close()
+	dir := filepath.Dir(relOS)
+	if err := rt.MkdirAll(dir, 0o755); err != nil {
+		return bad("creating %s: %v", dir, err)
+	}
+	mode := os.FileMode(0o644)
+	if fi, err := rt.Lstat(relOS); err == nil && fi.Mode().IsRegular() {
+		mode = fi.Mode().Perm()
+	}
+	tmp := filepath.Join(dir, fmt.Sprintf(".sagan-put-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	f, err := rt.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return bad("creating %s: %v", rel, err)
+	}
+	defer rt.Remove(tmp)
+	n, err := io.Copy(f, io.LimitReader(r, DefaultLimits.MaxBytes+1))
+	if err == nil {
+		err = f.Chmod(mode) // OpenFile's mode is reduced by the umask
+	}
+	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
@@ -103,24 +121,43 @@ func WriteFile(root, rel string, r io.Reader) error {
 	if n > DefaultLimits.MaxBytes {
 		return bad("file larger than %d bytes", DefaultLimits.MaxBytes)
 	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
-		return err
+	if err := rt.Rename(tmp, relOS); err != nil {
+		return bad("replacing %s: %v", rel, err)
 	}
-	return os.Rename(tmp.Name(), target)
+	return nil
 }
 
-// RemoveFile deletes root/rel (a file or a whole directory) if it exists.
+// RemoveFile deletes root/rel (a file or a whole directory) if it exists,
+// through os.Root for the same reason as WriteFile.
 func RemoveFile(root, rel string) error {
-	if err := validate.RelPath("path", rel); err != nil {
-		return err
-	}
-	realRoot, err := filepath.EvalSymlinks(root)
+	realRoot, relOS, err := resolve(root, rel)
 	if err != nil {
 		return err
 	}
-	target := filepath.Join(realRoot, filepath.FromSlash(rel))
-	if err := checkParent(realRoot, target, false); err != nil {
+	afterCheck()
+	rt, err := os.OpenRoot(realRoot)
+	if err != nil {
 		return err
 	}
-	return os.RemoveAll(target)
+	defer rt.Close()
+	if err := rt.RemoveAll(relOS); err != nil {
+		return bad("removing %s: %v", rel, err)
+	}
+	return nil
+}
+
+// resolve validates rel and rejects, with a clear error, parents that already
+// point outside root. os.Root enforces the same rule against later changes.
+func resolve(root, rel string) (realRoot, relOS string, err error) {
+	if err := validate.RelPath("path", rel); err != nil {
+		return "", "", err
+	}
+	if realRoot, err = filepath.EvalSymlinks(root); err != nil {
+		return "", "", err
+	}
+	relOS = filepath.FromSlash(rel)
+	if err := checkParent(realRoot, filepath.Join(realRoot, relOS), false); err != nil {
+		return "", "", err
+	}
+	return realRoot, relOS, nil
 }

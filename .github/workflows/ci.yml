@@ -11,10 +11,11 @@ jobs:
       run:
         working-directory: agent
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
@@ -26,16 +27,24 @@ jobs:
       run:
         working-directory: cli
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: cli/package-lock.json
-      - uses: actions/setup-go@v5 # the contract test builds sagand
+      - uses: actions/setup-go@v7 # the contract test builds sagand
         with:
           go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck cli/scripts/provision.sh test/e2e/run.sh

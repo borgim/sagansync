@@ -44,7 +44,7 @@ A v0.1 introduz o **`sagand`**, um agente em Go que roda no VPS e substitui o Ca
 - API HTTP pública, webhooks, painel web.
 - Teste ponta a ponta no CI e com domínio público.
 
-**Requisitos do servidor:** Ubuntu 22.04+ ou Debian 12+ (cgroups v2), `amd64` ou `arm64`, acesso root ou sudo para o provisionamento.
+**Requisitos do servidor:** Ubuntu 24.04+ ou Debian 12+ (Podman 4.3+ com API `v4.0.0`, cgroups v2), `amd64` ou `arm64`, acesso root ou sudo para o provisionamento. O Ubuntu 22.04 fica de fora porque vem com Podman 3.4.
 
 **Requisitos locais:** Node 20+, `ssh` do OpenSSH.
 
@@ -62,7 +62,7 @@ local                                   VPS
                                         │  └─ API REST do Podman (socket do usuário)  │
                                         │          ▼                                  │
                                         │ podman rootless (usuário sagan)             │
-                                        │  sagan-app-production-<id>, sagan-app-feat-x│
+                                        │  sagan_app_production_<id>, sagan_app_feat-x│
                                         └─────────────────────────────────────────────┘
 ```
 
@@ -144,7 +144,10 @@ O agente não confia na CLI.
 - Nomes de variáveis de ambiente: `^[A-Za-z_][A-Za-z0-9_]*$`.
 - Nenhuma string entra em comando de shell. O agente não usa shell em lugar nenhum.
 - Extração de tar (`release`):
-  - rejeita caminhos absolutos, componentes `..` e symlinks ou hardlinks cujo destino resolvido saia do diretório da release;
+  - rejeita caminhos absolutos e componentes `..`;
+  - symlinks: o alvo precisa ser relativo e **não pode conter `..`**. Uma checagem só do destino resolvido pode ser burlada com symlinks encadeados;
+  - hardlinks: o alvo precisa ser um arquivo regular já extraído dentro da release;
+  - antes de gravar qualquer arquivo, o diretório pai (com symlinks resolvidos) precisa estar dentro da release. Isso também protege o `put` do `dev` contra symlinks criados pelo próprio container no bind mount;
   - rejeita tipos de arquivo especiais (device, fifo);
   - limites: 500 MB descompactados e 100.000 entradas.
 
@@ -164,8 +167,8 @@ CLI                                   sagand
 empacota (tar.gz)
 ssh sagan@vps sagand deploy <flags> ─▶ 1. valida; adquire trava do workspace (sem fila)
    tar.gz pelo stdin                  2. extrai em /srv/sagan/<p>/<w>/releases/<id>/
-◀── eventos JSON ──────────────────── 3. build da imagem sagan-<p>-<w>:<id> (logs em stream)
-                                      4. cria e inicia sagan-<p>-<w>-<id> (127.0.0.1:<aleatória>)
+◀── eventos JSON ──────────────────── 3. build da imagem localhost/sagan_<p>_<w>:<id> (logs em stream)
+                                      4. cria e inicia sagan_<p>_<w>_<id> (127.0.0.1:<aleatória>)
                                       5. health check
                                       6a. OK → troca a rota (atômico), persiste o estado,
                                           espera o dreno, para e remove o container antigo,
@@ -175,6 +178,7 @@ ssh sagan@vps sagand deploy <flags> ─▶ 1. valida; adquire trava do workspace
                                       7. libera a trava
 ```
 
+- **Nomes:** container `sagan_<p>_<w>_<id>`, imagem `localhost/sagan_<p>_<w>:<id>`. O separador é `_`, que não é permitido em nomes de projeto nem de workspace. Com `-`, os pares (`a-b`, `c`) e (`a`, `b-c`) gerariam o mesmo nome.
 - **Id da release:** `YYYYMMDD-HHMMSS-<sha7>` (o sha vem do commit atual, ou `nogit`).
 - **Trava:** mutex por `(projeto, workspace)` no daemon. Se já houver um deploy em andamento, retorna erro `busy` na hora.
 - **Health check:**
@@ -263,7 +267,7 @@ Registros explícitos têm precedência sobre o curinga. `www`, `mail` e similar
           "healthPath": "/health",
           "mode": "deploy",              // "deploy" | "dev"
           "release": "20260924-101500-a1b2c3d",
-          "container": "sagan-myapp-production-20260924-101500-a1b2c3d",
+          "container": "sagan_myapp_production_20260924-101500-a1b2c3d",
           "hostPort": 41873,
           "updatedAt": "2026-09-24T10:15:30Z"
         }
@@ -277,7 +281,7 @@ Registros explícitos têm precedência sobre o curinga. `www`, `mail` e similar
 - O daemon é a **fonte da verdade**. No boot, e a cada 60 s:
   - para cada workspace, garante que o container exista e esteja rodando. Se não estiver, inicia e atualiza `hostPort`;
   - reconstrói a tabela de rotas;
-  - containers `sagan-*` que não constam no estado são parados e removidos (órfãos de um deploy interrompido).
+  - containers com o label `sagan.managed=true` que não constam no estado são parados e removidos (órfãos de um deploy interrompido). Workspaces com operação em andamento são ignorados.
 - Os containers **não** usam `--restart`, porque a reconciliação cuida disso.
 
 ## 8. Comandos
@@ -289,6 +293,7 @@ O cliente `sagand` escreve no stdout um JSON por linha:
 ```jsonc
 {"v":1,"type":"step","name":"build"}
 {"v":1,"type":"log","stream":"build","line":"STEP 1/6: FROM node:22-alpine"}
+{"v":1,"type":"warn","code":"tls_pending","message":"..."}
 {"v":1,"type":"done","url":"https://api.example.com","release":"20260924-...","hostPort":41873}
 {"v":1,"type":"error","code":"health_failed","message":"...","logs":["...últimas 50 linhas..."]}
 ```
@@ -315,7 +320,7 @@ O cliente `sagand` escreve no stdout um JSON por linha:
 Apps reais precisam de configuração (`DATABASE_URL`, chaves de API). Como o `.env` local nunca é enviado, a v0.1 tem um mecanismo explícito:
 
 - `sagansync env set KEY=VALUE [-w ws]`, `env unset KEY`, `env list` (mostra as chaves, com os valores mascarados).
-- O agente guarda em `/var/lib/sagand/env/<p>/<w>.env` (`0600`) e injeta no container na criação.
+- O agente guarda em `/var/lib/sagand/env/<p>/<w>.json` (`0600`, objeto JSON, para preservar valores com quebras de linha e aspas) e injeta no container na criação.
 - Uma mudança de env só vale no próximo `deploy` (ou `dev`). A CLI avisa isso.
 - O valor chega ao agente pelo stdin, e não pela linha de comando, para não aparecer em `ps` nem em logs.
 

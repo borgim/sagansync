@@ -7,6 +7,7 @@ type Reply = Partial<RunResult> | ((call: Call) => Partial<RunResult>);
 async function read(input?: Input): Promise<string> {
   if (input === undefined) return "";
   if (typeof input === "string") return input;
+  if (Buffer.isBuffer(input)) return input.toString("latin1");
   const chunks: Buffer[] = [];
   for await (const c of input as Readable) chunks.push(Buffer.from(c));
   return Buffer.concat(chunks).toString("latin1");

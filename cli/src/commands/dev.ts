@@ -38,7 +38,8 @@ export function createSyncer(ctx: Ctx, workspace: string): Syncer {
   };
   const { project } = ctx.config;
   return {
-    put: (rel) => enqueue(`↑ ${rel}`, () => ctx.remote.run(["put", project, workspace, rel], fs.createReadStream(path.join(ctx.cwd, rel)))),
+    // The whole file is read first so a read error never reaches the remote.
+    put: (rel) => enqueue(`↑ ${rel}`, async () => ctx.remote.run(["put", project, workspace, rel], await fs.promises.readFile(path.join(ctx.cwd, rel)))),
     rm: (rel) => enqueue(`✕ ${rel}`, () => ctx.remote.run(["rm", project, workspace, rel])),
     idle: () => chain,
   };

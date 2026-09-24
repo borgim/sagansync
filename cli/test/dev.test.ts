@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { sshRemote, type Target } from "../src/lib/ssh.js";
+import { fakeSsh } from "./helpers/fakeSsh.js";
 import { createSyncer, dev, type DevSession } from "../src/commands/dev.js";
 import { projectDir, testCtx } from "./helpers/ctx.js";
 import { ev, FakeRemote, VERSION_OK } from "./helpers/fakeRemote.js";
@@ -31,6 +34,19 @@ describe("createSyncer", () => {
     expect(remote.calls[0]!.stdin).toBe("A");
     expect(ctx.lines).toEqual(["  ↑ a.ts", expect.stringContaining("✖ ↑ bad.ts"), "  ✕ old.ts"]);
   });
+});
+
+test("createSyncer does not send a file it cannot read", async () => {
+  // Real ssh plumbing: the bug only shows when the read fails mid-pipe.
+  const ssh = fakeSsh({ code: 0 });
+  const target: Target = { host: "vps.test", port: 22, user: "sagan", identityFile: "/k", knownHosts: "/kh", controlDir: os.tmpdir() };
+  const ctx = testCtx(new FakeRemote(), projectDir({ "locked.ts": "secret" }));
+  ctx.remote = sshRemote(target, ssh.bin);
+  fs.chmodSync(path.join(ctx.cwd, "locked.ts"), 0o000);
+  const s = createSyncer(ctx, "feat-x");
+  void s.put("locked.ts");
+  await s.idle();
+  expect(ctx.lines).toEqual([expect.stringMatching(/✖ ↑ locked.ts: .*EACCES/)]);
 });
 
 describe("dev", () => {

@@ -48,7 +48,7 @@ export function sshArgs(t: Target): string[] {
 }
 
 export type RunResult = { code: number; stdout: string; stderr: string };
-export type Input = Readable | string;
+export type Input = Readable | string | Buffer;
 
 // Remote runs sagand subcommands on the VPS.
 export interface Remote {
@@ -64,16 +64,23 @@ export function sshRemote(t: Target, sshBin = process.env.SAGANSYNC_SSH ?? "ssh"
     fs.mkdirSync(t.controlDir, { recursive: true, mode: 0o700 });
     const child = spawn(sshBin, [...sshArgs(t), remoteCommand(args)], { stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.on("error", () => {}); // the remote may exit before reading all input
-    if (typeof stdin === "string") child.stdin.end(stdin);
+    // If the local input fails (unreadable file, packing error), ssh must not
+    // see a clean EOF: the remote would accept the truncated body as complete.
+    let inputError: Error | undefined;
+    if (typeof stdin === "string" || Buffer.isBuffer(stdin)) child.stdin.end(stdin);
     else if (stdin) {
-      stdin.on("error", (err) => child.stdin.destroy(err));
+      stdin.on("error", (err) => {
+        inputError = err;
+        stdin.unpipe(child.stdin);
+        child.kill("SIGTERM");
+      });
       stdin.pipe(child.stdin);
     } else child.stdin.end();
     let stderr = "";
     child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
     const done = new Promise<{ code: number; stderr: string }>((resolve, reject) => {
       child.on("error", reject);
-      child.on("close", (code) => resolve({ code: code ?? 1, stderr }));
+      child.on("close", (code) => (inputError ? reject(inputError) : resolve({ code: code ?? 1, stderr })));
     });
     return { child, done };
   };

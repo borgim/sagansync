@@ -62,6 +62,12 @@ describe("sshRemote", () => {
     expect(ssh.record().stdin).toBe("tarball");
   });
 
+  test("a failing input stream rejects instead of sending a truncated body", async () => {
+    const ssh = fakeSsh({ code: 0 });
+    const broken = new Readable({ read() { this.destroy(new Error("EACCES: permission denied")); } });
+    await expect(sshRemote(target, ssh.bin).run(["put", "app", "ws", "a.ts"], broken)).rejects.toThrow("EACCES");
+  });
+
   test("a missing ssh binary rejects", async () => {
     await expect(sshRemote(target, "/nonexistent/ssh").run(["version"])).rejects.toThrow();
   });

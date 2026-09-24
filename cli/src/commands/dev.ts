@@ -15,7 +15,8 @@ export type DevOptions = {
   build?: boolean;
   force?: boolean;
   verbose?: boolean;
-  onBranchChange?: () => void;
+  onStop?: () => void; // the session stopped by itself (branch change, watcher failure)
+  watch?: typeof chokidar.watch; // tests use it to reach the watcher
 };
 
 export type Syncer = { put(rel: string): Promise<void>; rm(rel: string): Promise<void>; idle(): Promise<void> };
@@ -68,7 +69,9 @@ export async function dev(ctx: Ctx, opts: DevOptions): Promise<DevSession> {
   const syncer = createSyncer(ctx, workspace);
   const match = ignoreMatcher(ctx.cwd);
   const rel = (p: string) => path.relative(ctx.cwd, p).split(path.sep).join("/");
-  const watcher = chokidar.watch(ctx.cwd, {
+  let stopped = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const watcher = (opts.watch ?? chokidar.watch)(ctx.cwd, {
     ignoreInitial: true,
     ignored: (p, stats) => {
       const r = rel(p);
@@ -76,26 +79,41 @@ export async function dev(ctx: Ctx, opts: DevOptions): Promise<DevSession> {
     },
     awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 25 },
   });
-  watcher
-    .on("add", (p) => void syncer.put(rel(p)))
-    .on("change", (p) => void syncer.put(rel(p)))
-    .on("unlink", (p) => void syncer.rm(rel(p)))
-    .on("unlinkDir", (p) => void syncer.rm(rel(p)));
-  await new Promise<void>((resolve) => watcher.once("ready", () => resolve()));
-
-  // git replaces .git/HEAD with a rename on checkout, which file watchers miss,
-  // so the branch is polled instead.
-  const start = JSON.stringify(branchState(ctx.cwd));
-  let stopped = false;
   const close = async () => {
     stopped = true;
     clearInterval(timer);
     await watcher.close();
   };
-  const timer = setInterval(() => {
+  const stop = (message: string, hint?: string) => {
+    if (stopped) return;
+    ctx.out(paint("red", `✖ ${message}`));
+    if (hint) ctx.out(paint("yellow", hint));
+    void close().then(() => opts.onStop?.());
+  };
+  watcher
+    .on("add", (p) => void syncer.put(rel(p)))
+    .on("change", (p) => void syncer.put(rel(p)))
+    .on("unlink", (p) => void syncer.rm(rel(p)))
+    .on("unlinkDir", (p) => void syncer.rm(rel(p)))
+    .on("error", (err) => {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === "ENOSPC") {
+        stop(`The file watcher failed: ${e.message}. Stopped syncing.`,
+          "Linux limits how many files can be watched. Raise it with: sudo sysctl fs.inotify.max_user_watches=524288");
+      } else if (e.code === "EMFILE") {
+        stop(`The file watcher failed: ${e.message}. Stopped syncing.`, "Too many open files. Raise the limit with `ulimit -n 10240` and run again.");
+      } else {
+        ctx.out(paint("yellow", `! File watcher: ${e.message}`)); // e.g. one unreadable folder; the rest keeps syncing
+      }
+    });
+  await new Promise<void>((resolve) => watcher.once("ready", () => resolve()));
+
+  // git replaces .git/HEAD with a rename on checkout, which file watchers miss,
+  // so the branch is polled instead.
+  const start = JSON.stringify(branchState(ctx.cwd));
+  timer = setInterval(() => {
     if (stopped || JSON.stringify(branchState(ctx.cwd)) === start) return;
-    ctx.out(paint("red", `✖ The git branch changed. Stopped syncing to ${workspace} so it does not receive another branch's files.`));
-    void close().then(() => opts.onBranchChange?.());
+    stop(`The git branch changed. Stopped syncing to ${workspace} so it does not receive another branch's files.`);
   }, 1000);
   ctx.out("Watching for changes (Ctrl+C to stop)...");
   return { close, idle: () => syncer.idle() };

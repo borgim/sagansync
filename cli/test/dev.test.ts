@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import chokidar, { type FSWatcher } from "chokidar";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { sshRemote, type Target } from "../src/lib/ssh.js";
 import { fakeSsh } from "./helpers/fakeSsh.js";
@@ -86,12 +87,27 @@ describe("dev", () => {
     await vi.waitFor(() => expect(remote.calls.some((c) => c.args[0] === "rm" && c.args[3] === "new.ts")).toBe(true), { timeout: 5000 });
   });
 
+  test("a watcher error stops the session with a clear message instead of crashing", async () => {
+    const remote = new FakeRemote({ version: VERSION_OK, host: { stdout: "{}" }, dev: devDone });
+    const ctx = testCtx(remote);
+    let watcher: FSWatcher | undefined;
+    let stopped = false;
+    session = await dev(ctx, {
+      workspace: "feat-x",
+      onStop: () => (stopped = true),
+      watch: (paths, options) => (watcher = chokidar.watch(paths, options)),
+    });
+    watcher!.emit("error", Object.assign(new Error("ENOSPC: System limit for number of file watchers reached"), { code: "ENOSPC" }));
+    await vi.waitFor(() => expect(stopped).toBe(true), { timeout: 5000 });
+    expect(ctx.lines.some((l) => l.includes("max_user_watches"))).toBe(true);
+  });
+
   test("stops when the git branch changes", async () => {
     const cwd = gitRepo("feat-x");
     const remote = new FakeRemote({ version: VERSION_OK, host: { stdout: "{}" }, dev: devDone });
     const ctx = testCtx(remote, cwd);
     let stopped = false;
-    session = await dev(ctx, { onBranchChange: () => (stopped = true) });
+    session = await dev(ctx, { onStop: () => (stopped = true) });
     execFileSync("git", ["checkout", "-q", "-b", "other"], { cwd });
     await vi.waitFor(() => expect(stopped).toBe(true), { timeout: 5000 });
     expect(ctx.lines.some((l) => l.includes("branch changed"))).toBe(true);

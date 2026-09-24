@@ -44,7 +44,7 @@ program.command("dev").description("run the branch in dev mode and sync local ed
   .option("--force", "allow dev mode on production")
   .option("-v, --verbose", "show the full build output")
   .action(async (o) => {
-    const session = await dev(ctx(), { ...o, onBranchChange: () => process.exit(1) });
+    const session = await dev(ctx(), { ...o, onStop: () => process.exit(1) });
     process.once("SIGINT", () => void session.close().then(() => process.exit(0)));
   });
 

@@ -80,6 +80,11 @@ write_config
 ADMIN=(--admin "$USER@127.0.0.1" --admin-key "$HOME/.lima/_config/user" --agent-binary "$W/sagand")
 
 say "Provision"
+vm <<<'sudo useradd -m -s /bin/bash sagan' >/dev/null 2>&1
+out=$(sagansync provision "${ADMIN[@]}" 2>&1) || true
+expect "an existing sagan account is not taken over" "was not created by SaganSync" "$out"
+# If provision took the account over anyway, it is in use: stop it before removing it.
+vm <<<'sudo systemctl stop sagand; sudo loginctl terminate-user sagan; sudo userdel -r sagan' >/dev/null 2>&1 || true
 out=$(sagansync provision "${ADMIN[@]}" 2>&1) || true
 expect "provision installs sagand and reaches it with the deploy key" "is ready" "$out"
 vm <<'EOF' >/dev/null 2>&1
@@ -92,19 +97,46 @@ EOF
 limactl copy "$VM:/var/tmp/pebble.minica.pem" "$W/pebble.minica.pem"
 out=$(sagansync provision "${ADMIN[@]}" --acme-ca https://localhost:14000/dir --acme-root-ca "$W/pebble.minica.pem" 2>&1) || true
 expect "provision can run again (now with Pebble as the ACME server)" "is ready" "$out"
+out=$(vm <<<'sudo grep -c "sagand gateway" /home/sagan/.ssh/authorized_keys; grep -c "^sagan:" /etc/subuid /etc/subgid')
+expect "running provision again adds no duplicate key or id range" "1
+/etc/subuid:1
+/etc/subgid:1" "$out"
 
 say "Deploy key restrictions"
 K=(-i "$W/home/keys/127.0.0.1_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o "UserKnownHostsFile=$W/home/known_hosts" -p "$(ssh_port)" -l sagan)
 out=$(ssh "${K[@]}" 127.0.0.1 bash -c id 2>&1; echo "exit=$?")
 expect "a shell command is refused" "exit=126" "$out"
-ssh "${K[@]}" -N -L 18080:127.0.0.1:443 127.0.0.1 >/dev/null 2>&1 &
-FWD=$!
-sleep 2
-out=$(curl -s -m 2 -o /dev/null -w "%{http_code}" -k https://127.0.0.1:18080/ || true)
-kill "$FWD" 2>/dev/null || true
-expect "port forwarding is refused" "000" "$out"
+# forwarded <ssh args...>: HTTP status of sagand's port 80 through an ssh tunnel
+forwarded() {
+  ssh "$@" -N -L 18080:127.0.0.1:80 127.0.0.1 >/dev/null 2>&1 &
+  local pid=$!
+  sleep 2
+  curl -s -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:18080/ || true
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+out=$(forwarded -i "$HOME/.lima/_config/user" -o IdentitiesOnly=yes -o BatchMode=yes -o "UserKnownHostsFile=$W/home/known_hosts" -p "$(ssh_port)" -l "$USER")
+expect "control: the admin account can open a tunnel, so the next check can fail" "308" "$out"
+out=$(forwarded "${K[@]}")
+expect "port forwarding is refused for the deploy key" "000" "$out"
 out=$(vm <<<'sudo -u sagan sudo -n true 2>&1 || true')
 expect "the sagan user has no sudo" "password is required" "$out"
+# Something running as sagan (say, a container escape) swaps authorized_keys
+# for a symlink to a root-owned file; the next provision must not write there.
+vm <<'EOF'
+echo original | sudo tee /etc/sagansync-victim >/dev/null
+sudo -u sagan cp /home/sagan/.ssh/authorized_keys /home/sagan/.ssh/ak.bak
+sudo -u sagan ln -sf /etc/sagansync-victim /home/sagan/.ssh/authorized_keys
+EOF
+out=$(sagansync provision --upgrade "${ADMIN[@]}" 2>&1) || true
+expect "provision refuses a symlinked authorized_keys" "symlink" "$out"
+out=$(vm <<<'cat /etc/sagansync-victim; stat -c %U /etc/sagansync-victim')
+expect "root never writes through sagan's symlinks" "original
+root" "$out"
+vm <<'EOF'
+sudo -u sagan mv -f /home/sagan/.ssh/ak.bak /home/sagan/.ssh/authorized_keys
+sudo rm -f /etc/sagansync-victim
+EOF
 
 say "Deploy"
 out=$(sagansync deploy 2>&1) || true
@@ -112,6 +144,11 @@ expect "deploy reports the URL" "Live at https://app.test" "$out"
 expect "the app answers over HTTPS with a valid certificate" "v1" "$(get app.test)"
 out=$(vm <<<'curl -s -o /dev/null -w "%{http_code} %{redirect_url}" --resolve app.test:80:127.0.0.1 http://app.test/x')
 expect "HTTP redirects to HTTPS" "308 https://app.test/x" "$out"
+out=$(vm <<'EOF'
+sudo -iu sagan bash -c 'export XDG_RUNTIME_DIR=/run/user/$(id -u); podman inspect --format "{{.HostConfig.LogConfig.Type}} {{.HostConfig.LogConfig.Size}}" $(podman ps -q | head -1)'
+EOF
+)
+expect "container logs go to a size-capped file" "k8s-file 10" "$out"
 expect "an unknown host gets no certificate" "curl failed" "$(get nope.test)"
 
 say "Zero downtime"
@@ -126,7 +163,11 @@ sagansync deploy >/dev/null 2>&1 || true
 sleep 2
 # shellcheck disable=SC2016 # expanded inside the VM
 out=$(vm <<<'touch /var/tmp/loop.stop; sleep 1; echo "total=$(wc -l < /var/tmp/loop.log) failed=$(grep -vc "^200$" /var/tmp/loop.log)"')
-expect "no request failed while v2 replaced v1 ($out)" "failed=0" "$out"
+if [[ "$out" =~ total=([0-9]+)\ failed=0 ]] && [ "${BASH_REMATCH[1]}" -ge 20 ]; then
+  pass "no request failed while v2 replaced v1 ($out)"
+else
+  fail "requests failed, or too few were made, while v2 replaced v1 ($out)"
+fi
 expect "v2 is live with env values intact" "v2 it's \"quoted\" \$HOME" "$(get app.test)"
 
 say "Broken release"

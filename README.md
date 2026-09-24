@@ -110,6 +110,7 @@ The design is documented in [`docs/superpowers/specs`](docs/superpowers/specs/20
 - **`REMOTE HOST IDENTIFICATION HAS CHANGED`**: if you reinstalled the server, delete its line from `~/.config/sagansync/known_hosts`.
 - **`The admin account needs root or passwordless sudo`**: use `--admin root@<host>`, or allow passwordless sudo for that user.
 - **`Ports 80/443 are already in use`**: stop the web server that holds them (nginx, apache…), then run `provision` again.
+- **A deploy key leaked, or a developer left**: `provision` only ever adds keys. Remove the key's line from `/home/sagan/.ssh/authorized_keys` on the server (each line ends with the key's comment, e.g. `sagansync-myapp`), then create a new key with `sagansync init` and run `provision` again.
 - **A deploy fails its health check**: the last lines of the container's log are printed; `sagansync logs` shows more. Your previous release is still live.
 
 ## Development

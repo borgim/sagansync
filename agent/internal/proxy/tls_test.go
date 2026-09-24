@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func newTestTLS(t *testing.T, allowed func(string) bool) *TLS {
@@ -58,5 +59,20 @@ func TestBadRootCAIsAnError(t *testing.T) {
 	os.WriteFile(junk, []byte("not a certificate"), 0o600)
 	if _, err := NewTLS(TLSOptions{StorageDir: t.TempDir(), RootCAPath: junk}, func(string) bool { return true }); err == nil {
 		t.Error("root CA without certificates accepted")
+	}
+}
+
+func TestEnsureObtainsAndReportsFailure(t *testing.T) {
+	tl := newTestTLS(t, func(string) bool { return true }) // CA at 127.0.0.1:14000 is not running
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	errs := make(chan error, 4)
+	for _, h := range []string{"a.test", "b.test", "c.test", "d.test"} {
+		go func(h string) { errs <- tl.Ensure(ctx, h) }(h)
+	}
+	for i := 0; i < 4; i++ {
+		if err := <-errs; err == nil {
+			t.Fatal("Ensure returned nil although no certificate could be obtained")
+		}
 	}
 }

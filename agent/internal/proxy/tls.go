@@ -71,9 +71,12 @@ func (t *TLS) TLSConfig() *tls.Config {
 // HTTPHandler answers ACME HTTP-01 challenges and passes everything else on.
 func (t *TLS) HTTPHandler(next http.Handler) http.Handler { return t.acme.HTTPChallengeHandler(next) }
 
-// Ensure obtains (or renews) the certificate for host right away.
+// Ensure obtains the certificate for host right away, so the first visitor
+// does not wait for issuance. It is a no-op when storage already has one; the
+// on-demand handshake loads it from there. ManageSync is not used because with
+// OnDemand set it only records the host in an unsynchronized allowlist.
 func (t *TLS) Ensure(ctx context.Context, host string) error {
-	return t.magic.ManageSync(ctx, []string{host})
+	return t.magic.ObtainCertSync(ctx, host)
 }
 
 func (t *TLS) Close() { t.cache.Stop() }

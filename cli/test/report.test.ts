@@ -1,7 +1,8 @@
+import { EventEmitter } from "node:events";
 import { expect, test } from "vitest";
 import { CliError } from "../src/lib/agent.js";
 import { ConfigError } from "../src/lib/config.js";
-import { report } from "../src/lib/report.js";
+import { exitOnBrokenPipe, report } from "../src/lib/report.js";
 
 test("CliError prints message, details and hint and keeps its exit code", () => {
   const lines: string[] = [];
@@ -14,4 +15,13 @@ test("ConfigError exits with 2, Ctrl+C in a prompt with 130, anything else with 
   const abort = Object.assign(new Error("User force closed the prompt"), { name: "ExitPromptError" });
   expect(report(abort, () => {})).toBe(130);
   expect(report(new Error("boom"), () => {})).toBe(1);
+});
+
+test("a closed pipe (sagansync logs | head) exits quietly with 0", () => {
+  const stdout = new EventEmitter();
+  const exits: number[] = [];
+  exitOnBrokenPipe(stdout, (code) => exits.push(code));
+  stdout.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+  expect(exits).toEqual([0]);
+  expect(() => stdout.emit("error", Object.assign(new Error("disk full"), { code: "ENOSPC" }))).toThrow("disk full");
 });

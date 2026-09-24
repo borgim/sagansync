@@ -9,7 +9,7 @@ import { list } from "./commands/list.js";
 import { logs } from "./commands/logs.js";
 import { remove } from "./commands/remove.js";
 import { loadConfig } from "./lib/config.js";
-import { report } from "./lib/report.js";
+import { exitOnBrokenPipe, report } from "./lib/report.js";
 import { sshRemote, targetFor } from "./lib/ssh.js";
 import { VERSION } from "./version.js";
 
@@ -18,6 +18,8 @@ function ctx(): Ctx {
   const config = loadConfig(cwd);
   return { cwd, config, remote: sshRemote(targetFor(config)), out: (s) => console.log(s) };
 }
+
+exitOnBrokenPipe(process.stdout);
 
 const ask = (message: string) => confirm({ message, default: false });
 const int = (v: string) => Number.parseInt(v, 10);

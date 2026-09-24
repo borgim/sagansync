@@ -18,3 +18,12 @@ export function report(err: unknown, write: (line: string) => void = console.err
   write(paint("red", `✖ ${err instanceof Error ? err.message : String(err)}`));
   return 1;
 }
+
+// exitOnBrokenPipe ends the process quietly when the reader of our output
+// goes away (`sagansync logs | head`); other stream errors still surface.
+export function exitOnBrokenPipe(stream: NodeJS.EventEmitter, exit: (code: number) => void = (c) => process.exit(c)): void {
+  stream.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") exit(0);
+    else throw err;
+  });
+}

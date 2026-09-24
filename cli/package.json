@@ -1,0 +1,36 @@
+{
+  "name": "sagansync",
+  "version": "0.1.0",
+  "description": "Deploy every git branch to its own HTTPS URL on your own VPS.",
+  "type": "module",
+  "bin": {
+    "sagansync": "dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "repository": "github:borgim/sagansync",
+  "author": "Pedro Borges",
+  "license": "MIT",
+  "dependencies": {
+    "@inquirer/prompts": "^8.7.2",
+    "chokidar": "^5.0.0",
+    "commander": "^15.0.0",
+    "ignore": "^7.0.10",
+    "tar-stream": "^3.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}

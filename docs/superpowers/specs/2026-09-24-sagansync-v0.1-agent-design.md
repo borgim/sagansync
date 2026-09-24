@@ -97,7 +97,7 @@ command="/usr/local/bin/sagand gateway",restrict ssh-ed25519 AAAA... sagansync-<
 ```
 
 - O `restrict` desliga pty, port forwarding, agent forwarding e X11.
-- O `sagand gateway` lê `SSH_ORIGINAL_COMMAND`, divide em argumentos **sem usar shell** e só aceita os subcomandos da lista permitida: `version`, `deploy`, `list`, `logs`, `remove`, `dev`, `put`, `rm`, `env`.
+- O `sagand gateway` lê `SSH_ORIGINAL_COMMAND`, divide em argumentos **sem usar shell** e só aceita os subcomandos da lista permitida: `version`, `host`, `deploy`, `list`, `logs`, `remove`, `dev`, `put`, `rm`, `env`.
 - Qualquer outro comando (incluindo vazio, ou seja, uma tentativa de shell) é rejeitado com código de saída 126 e uma mensagem.
 - Resultado: uma chave vazada permite fazer deploy, mas não abre shell nem túnel.
 
@@ -139,7 +139,7 @@ Restart=always
 O agente não confia na CLI.
 
 - Projeto e workspace: `^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`.
-- Domínio: hostname válido (rótulos `[a-z0-9-]`, até 253 caracteres), sem protocolo, porta ou curinga.
+- `domain` e `previewDomain`: hostname válido (rótulos `[a-z0-9-]` de 1 a 63 caracteres, total até 253), sem protocolo, porta ou curinga, com pelo menos dois rótulos.
 - Portas: 1–65535. `healthPath` começa com `/`, com até 200 caracteres.
 - Nomes de variáveis de ambiente: `^[A-Za-z_][A-Za-z0-9_]*$`.
 - Nenhuma string entra em comando de shell. O agente não usa shell em lugar nenhum.
@@ -188,10 +188,52 @@ ssh sagan@vps sagand deploy <flags> ─▶ 1. valida; adquire trava do workspace
 
 ### 5.2 Domínios por workspace
 
-- `main` ou `master` → workspace `production` → `domain`.
-- `develop` ou `dev` → `staging` → `staging.<domain>`.
-- Outras branches → `<workspace>.<domain>`. Requer DNS curinga (`*.<domain>`) apontando para o VPS. O README documenta isso.
-- Sem `domain` configurado, o workspace fica acessível só pela porta local, que o `list` mostra.
+Nomes de workspace a partir da branch:
+- `main` ou `master` → `production`.
+- `develop` ou `dev` → `staging`.
+- Outras → nome da branch sanitizado.
+
+O hostname de cada workspace é **calculado pelo agente** (pacote `domains`), a partir de `domain` e do opcional `previewDomain`, que a CLI envia:
+
+| Workspace | Sem `previewDomain` | Com `previewDomain` |
+| --- | --- | --- |
+| `production` | `<domain>` | `<domain>` |
+| outros (inclusive `staging`) | `<workspace>.<domain>` | `<workspace>-<projeto>.<previewDomain>` |
+
+Exemplo: `project = "barbervip"`, `domain = "api.pedroborgim.com.br"` e `previewDomain = "pedroborgim.com.br"`:
+- `production` → `api.pedroborgim.com.br`
+- `feat-login` → `feat-login-barbervip.pedroborgim.com.br`
+
+Regras adicionais:
+- **Limite de 63 caracteres por rótulo DNS:** se `<workspace>-<projeto>` passar de 63, o agente usa os primeiros 55 caracteres (sem `-` no final), mais `-` e os 7 primeiros hex do SHA-1 do rótulo completo. Com isso o nome continua determinístico e único.
+- **Sem `domain`:** o workspace fica acessível só pela porta local, que o `list` mostra. `previewDomain` sem `domain` é permitido: a produção fica sem URL pública e as branches usam o `previewDomain`.
+- **Colisão:** dois workspaces que resultem no mesmo hostname fazem o deploy do segundo falhar com `error{code:"host_conflict"}`.
+- O `done.url` informa o hostname final, e a CLI apenas o exibe. A CLI não replica essa lógica.
+
+### 5.3 DNS
+
+O SaganSync **não gerencia DNS**. O usuário cria os registros uma vez, e o `sagand` roteia pelo cabeçalho `Host`.
+
+**Registros necessários:**
+
+| Configuração | Registros |
+| --- | --- |
+| Só `domain` | `A <domain> → IP` e, para branches, `A *.<domain> → IP` |
+| `domain` + `previewDomain` (recomendado) | `A <domain> → IP` e `A *.<previewDomain> → IP` (**um curinga para todos os projetos**) |
+
+Registros explícitos têm precedência sobre o curinga. `www`, `mail` e similares não são afetados.
+
+**Certificados:** um por hostname, via HTTP-01. Isso só exige o hostname resolvendo para o VPS, sem API de DNS. Um certificado curinga via DNS-01 fica fora da v0.1.
+
+**Verificação na CLI:** antes do `deploy` e do `dev`, a CLI resolve o hostname esperado e o `host` do VPS.
+- Se os IPs não coincidirem, ou o hostname não resolver, mostra o aviso `dns_mismatch` com os registros a criar e **continua** o deploy.
+- Como a CLI não replica o cálculo do agente, ela usa o `sagand host <projeto> <workspace>`, um comando só de leitura. Esse comando entra na lista permitida do gateway.
+
+**O README documenta:**
+- **Registro.br:** há relatos de que o editor de DNS do registro.br não aceita `*`. Se for o caso, a alternativa é manter o domínio no registro.br e apontar os nameservers para a Cloudflare (gratuita), criando o curinga em modo **DNS only**.
+- **Cloudflare com proxy (nuvem laranja)** não é suportado na v0.1: usar DNS only.
+- **Certificate Transparency:** hostnames de branch ficam visíveis em logs públicos (ex.: crt.sh). Evitar nomes sensíveis em branches, ou esperar o certificado curinga.
+- **Limite do Let's Encrypt:** 50 certificados por domínio registrado por semana.
 
 ## 6. Proxy e TLS
 
@@ -214,7 +256,9 @@ ssh sagan@vps sagand deploy <flags> ─▶ 1. valida; adquire trava do workspace
     "myapp": {
       "workspaces": {
         "production": {
+          "host": "api.example.com",     // hostname final calculado (5.2)
           "domain": "api.example.com",
+          "previewDomain": null,
           "internalPort": 3000,
           "healthPath": "/health",
           "mode": "deploy",              // "deploy" | "dev"
@@ -257,7 +301,7 @@ O cliente `sagand` escreve no stdout um JSON por linha:
 
 | CLI | Remoto | Comportamento |
 | --- | --- | --- |
-| `init` | — | Pergunta host, projeto (padrão: nome da pasta sanitizado), porta interna, domínio, `healthPath`. Gera a chave de deploy. Grava `.sagansync/config.json` e `.sagansync/.gitignore`. |
+| `init` | — | Pergunta host, projeto (padrão: nome da pasta sanitizado), porta interna, domínio, `previewDomain`, `healthPath`. Mostra os registros DNS a criar (5.3). Gera a chave de deploy. Grava `.sagansync/config.json` e `.sagansync/.gitignore`. |
 | `provision [--admin u@h] [--upgrade] [--agent-binary <arquivo>] [--acme-email <e>]` | SSH como admin | Seção 4.1. `--upgrade` só troca o binário e reinicia o daemon. |
 | `deploy [-w <workspace>] [--verbose]` | `sagand deploy` | Seção 5. O workspace vem da branch atual. |
 | `list` | `sagand list` | Tabela: workspace, modo, release, status, porta, URL. |
@@ -299,7 +343,8 @@ Apps reais precisam de configuração (`DATABASE_URL`, chaves de API). Como o `.
   "user": "sagan",
   "project": "myapp",
   "internalPort": 3000,
-  "domain": "api.example.com",   // opcional
+  "domain": "api.example.com",   // opcional: produção
+  "previewDomain": "example.com", // opcional: branches em <workspace>-<projeto>.example.com
   "healthPath": "/health",       // opcional
   "healthTimeout": 60            // opcional
 }
@@ -320,7 +365,8 @@ sagansync/
 │   │       ├── pack.ts          # tar.gz respeitando ignores
 │   │       ├── events.ts        # parser e renderização dos eventos JSON
 │   │       ├── config.ts        # leitura e validação
-│   │       └── git.ts           # branch → workspace
+│   │       ├── git.ts           # branch → workspace
+│   │       └── dns.ts           # verificação dns_mismatch (5.3)
 │   └── test/                    # vitest
 ├── agent/                       # módulo Go, binário "sagand"
 │   ├── cmd/sagand/main.go       # subcomandos com o pacote flag
@@ -333,6 +379,7 @@ sagansync/
 │       ├── state/               # state.json, escrita atômica, trava por workspace
 │       ├── release/             # extração segura, retenção
 │       ├── envstore/            # arquivos de env por workspace
+│       ├── domains/             # workspace → hostname (5.2)
 │       └── validate/            # regras da seção 4.5
 ├── scripts/provision.sh
 ├── test/e2e/                    # VM Lima + Pebble + app de exemplo
@@ -374,21 +421,24 @@ sagansync/
    - `release`: tar com caminho absoluto, `..`, symlink e hardlink para fora, device, limites;
    - `state`: escrita atômica, recarga, `.tmp` que sobrou;
    - `deploy` com `Runtime` falso: sucesso, falha no build, health check falho, container que sai, trava ocupada, antigo sempre preservado em falhas, cancelamento do cliente;
-   - `proxy`: troca de rota com requisições simultâneas (`httptest`), 404 para domínio desconhecido, `DecisionFunc`.
+   - `proxy`: troca de rota com requisições simultâneas (`httptest`), 404 para domínio desconhecido, `DecisionFunc`;
+   - `domains`: tabela da 5.2, truncamento em 63 caracteres com hash, colisão (`host_conflict`).
 2. **Go, integração** (build tag `integration`, rodando na VM): cliente Podman contra o Podman rootless real.
 3. **CLI, unitários** (vitest):
    - `pack` exclui `.env*`, `.git`, `node_modules` e respeita `.gitignore` e `.dockerignore`;
    - os argumentos SSH contêm `accept-new` e ControlMaster e nunca `StrictHostKeyChecking=no`;
    - parser de eventos;
    - validação da configuração;
-   - branch → workspace.
+   - branch → workspace;
+   - `dns`: IPs coincidentes, divergentes e hostname que não resolve (resolver falso).
 4. **Ponta a ponta** (`test/e2e/run.sh`, VM Lima Ubuntu 24.04, Pebble com `PEBBLE_VA_ALWAYS_VALID=1`, `curl --resolve` com a CA do Pebble, app de exemplo Node com `/health` e versão), cobrindo os critérios de sucesso da seção 1:
    1. provision → deploy v1 → HTTPS responde `v1`;
    2. deploy v2 com loop de requisições a cada 100 ms → nenhuma falha;
    3. deploy quebrado → código de saída ≠ 0, logs exibidos, `v2` segue no ar;
    4. reboot da VM → o app volta;
    5. segurança: `ssh sagan@vm bash` recusado; comando fora da lista recusado; `sudo -n true` como `sagan` falha; tar com `../` rejeitado;
-   6. `env set` + deploy → variável visível no app; `list`, `logs`, `remove`; `dev` propaga uma edição.
+   6. `env set` + deploy → variável visível no app; `list`, `logs`, `remove`; `dev` propaga uma edição;
+   7. com `previewDomain`: branch `feat-x` responde em `feat-x-<projeto>.<previewDomain>` com certificado próprio.
 5. **CI** (GitHub Actions, a cada push): `go vet`, `go test -race`, `tsc --noEmit`, vitest. O teste ponta a ponta fica local nesta versão.
 
 ## 13. Decisões registradas
@@ -397,4 +447,6 @@ sagansync/
 - **Proxy próprio com certmagic** em vez do Caddy: uma dependência a menos no servidor, e é pré-requisito para scale to zero.
 - **Cliente REST próprio para o Podman** em vez das bindings oficiais: evita uma árvore de dependências grande e cgo.
 - **JSON com escrita atômica** em vez de SQLite para o estado: o volume é pequeno e não há consultas.
+- **`previewDomain` com rótulo único** (`<workspace>-<projeto>`) em vez de subdomínio aninhado: um único registro curinga serve todos os projetos, e curingas não cobrem dois níveis.
+- **SaganSync não gerencia DNS** na v0.1: o registro curinga é criado uma vez pelo usuário; integração com API de DNS só quando houver certificado curinga (DNS-01).
 - **Reconciliação pelo daemon** em vez de `--restart always`: uma única fonte da verdade, sem depender de `podman-restart.service` no modo rootless.

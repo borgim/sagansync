@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { ConfigError, NAME_RE } from "./config.js";
 
 function git(cwd: string, args: string[]): string | null {
@@ -16,6 +17,13 @@ export function branchState(cwd: string): BranchState {
   if (git(cwd, ["rev-parse", "--is-inside-work-tree"]) !== "true") return { kind: "none" };
   const name = git(cwd, ["symbolic-ref", "--short", "HEAD"]);
   return name ? { kind: "branch", name } : { kind: "detached" };
+}
+
+// gitPath resolves a path inside the git directory (worktree-aware), such as
+// "index.lock", or returns null outside git.
+export function gitPath(cwd: string, name: string): string | null {
+  const p = git(cwd, ["rev-parse", "--git-path", name]);
+  return p ? path.resolve(cwd, p) : null;
 }
 
 export function currentSha(cwd: string): string {

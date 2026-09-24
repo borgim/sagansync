@@ -102,6 +102,37 @@ describe("dev", () => {
     expect(ctx.lines.some((l) => l.includes("max_user_watches"))).toBe(true);
   });
 
+  test("does not upload the other branch's files during a checkout", async () => {
+    const cwd = gitRepo("feat-a");
+    const git = (...a: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...a], { cwd, stdio: "ignore" });
+    git("checkout", "-q", "-b", "feat-b");
+    for (let i = 0; i < 20; i++) fs.writeFileSync(path.join(cwd, `only-on-b-${i}.ts`), `b${i}`);
+    git("add", ".");
+    git("commit", "-q", "-m", "b files");
+    git("checkout", "-q", "feat-a");
+    const remote = new FakeRemote({ version: VERSION_OK, host: { stdout: "{}" }, dev: devDone });
+    const ctx = testCtx(remote, cwd);
+    let stopped = false;
+    session = await dev(ctx, { onStop: () => (stopped = true) });
+    git("checkout", "-q", "feat-b");
+    await vi.waitFor(() => expect(stopped).toBe(true), { timeout: 5000 });
+    await session.idle();
+    const leaked = remote.calls.filter((c) => c.args[0] === "put" && c.args[3]?.startsWith("only-on-b-"));
+    expect(leaked.map((c) => c.args[3])).toEqual([]);
+  });
+
+  test("a commit on the same branch keeps syncing", async () => {
+    const cwd = gitRepo("feat-a");
+    const remote = new FakeRemote({ version: VERSION_OK, host: { stdout: "{}" }, dev: devDone });
+    let stopped = false;
+    session = await dev(testCtx(remote, cwd), { onStop: () => (stopped = true) });
+    fs.writeFileSync(path.join(cwd, "feature.ts"), "x");
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-a", "--allow-empty", "-m", "wip"], { cwd });
+    execFileSync("git", ["add", "feature.ts"], { cwd });
+    await vi.waitFor(() => expect(remote.calls.some((c) => c.args[0] === "put" && c.args[3] === "feature.ts")).toBe(true), { timeout: 5000 });
+    expect(stopped).toBe(false);
+  });
+
   test("stops when the git branch changes", async () => {
     const cwd = gitRepo("feat-x");
     const remote = new FakeRemote({ version: VERSION_OK, host: { stdout: "{}" }, dev: devDone });

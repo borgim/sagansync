@@ -4,7 +4,7 @@ export default defineConfig({
   entry: ["src/main.ts"],
   format: ["esm"],
   platform: "node",
-  target: "node20",
+  target: "node22",
   clean: true,
   banner: { js: "#!/usr/bin/env node" },
 });

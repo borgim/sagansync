@@ -148,6 +148,7 @@ type namedVolume struct {
 
 type logConfig struct {
 	Driver string `json:"driver"`
+	Size   int64  `json:"size"` // bytes; k8s-file logs are otherwise unbounded
 }
 
 type specgen struct {
@@ -169,7 +170,7 @@ func (c *Client) Create(ctx context.Context, spec runtime.ContainerSpec) error {
 		NoNewPrivileges: true,
 		// Rootless Podman defaults to journald on systemd hosts, and the sagan
 		// user cannot read the journal, so `podman logs` came back empty.
-		LogConfig:    logConfig{Driver: "k8s-file"},
+		LogConfig:    logConfig{Driver: "k8s-file", Size: 10 << 20},
 		PortMappings: []portMapping{{HostIP: "127.0.0.1", ContainerPort: uint16(spec.InternalPort), Protocol: "tcp"}},
 	}
 	for _, b := range spec.Binds {

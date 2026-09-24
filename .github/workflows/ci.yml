@@ -19,3 +19,23 @@ jobs:
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
       - run: go test -race ./...
+
+  cli:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - uses: actions/setup-go@v5 # the contract test builds sagand
+        with:
+          go-version-file: agent/go.mod
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

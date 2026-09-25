@@ -1,6 +1,6 @@
 {
   "name": "sagansync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Deploy every git branch to its own HTTPS URL on your own VPS.",
   "type": "module",
   "bin": {

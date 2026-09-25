@@ -5,6 +5,7 @@ package deploy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -276,22 +277,21 @@ func (d *Deployer) activate(ctx context.Context, a activation, em events.Emitter
 	}
 
 	prev, hadPrev := d.st.Get(p, w)
-	if a.host != "" {
-		d.routes.Set(a.host, fmt.Sprintf("127.0.0.1:%d", port))
-	}
 	ws := state.Workspace{Host: a.host, Domain: a.req.Domain, PreviewDomain: a.req.PreviewDomain,
 		InternalPort: a.req.InternalPort, HealthPath: a.req.HealthPath, Mode: a.mode, Release: a.id,
 		Container: a.spec.Name, Command: a.command, HostPort: port, UpdatedAt: d.cfg.Now()}
-	if err := d.st.Put(p, w, ws); err != nil {
-		if a.host != "" {
-			if hadPrev && prev.Host == a.host {
-				d.routes.Set(a.host, fmt.Sprintf("127.0.0.1:%d", prev.HostPort))
-			} else {
-				d.routes.Delete(a.host)
-			}
-		}
+	// The host was checked before the build, but another workspace may have
+	// claimed it since; the state store settles that before any route moves.
+	if err := d.st.PutIfHostFree(p, w, ws); err != nil {
 		_ = d.rt.Remove(ctx, a.spec.Name)
+		var taken *state.HostTakenError
+		if errors.As(err, &taken) {
+			return 0, &OpError{Code: CodeHostConflict, Msg: taken.Error()}
+		}
 		return 0, internalErr(fmt.Errorf("save state: %w", err))
+	}
+	if a.host != "" {
+		d.routes.Set(a.host, fmt.Sprintf("127.0.0.1:%d", port))
 	}
 	if hadPrev && prev.Host != "" && prev.Host != a.host {
 		d.routes.Delete(prev.Host)

@@ -32,3 +32,5 @@ release:
   github:
     owner: borgim
     name: sagansync
+  # Tags such as v0.2.0-rc.1 become GitHub pre-releases.
+  prerelease: auto

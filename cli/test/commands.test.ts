@@ -75,6 +75,13 @@ describe("logs", () => {
     expect(remote.argsOf("logs")).toEqual(["logs", "--project", "app", "--workspace", "production", "--tail", "20", "-f"]);
     expect(ctx.lines).toEqual(["hello", '{"level":"info"}']);
   });
+  test("refuses a --tail that is not a whole number", async () => {
+    const remote = new FakeRemote({ version: VERSION_OK });
+    for (const tail of [Number.NaN, -1, 1.5]) {
+      await expect(logs(testCtx(remote), { tail })).rejects.toMatchObject({ exitCode: 2 });
+    }
+    expect(remote.calls).toHaveLength(0);
+  });
   test("turns an error event into an error", async () => {
     const remote = new FakeRemote({ version: VERSION_OK, logs: { code: 1, stdout: ev({ type: "error", code: "not_found", message: "workspace app/production does not exist" }) } });
     await expect(logs(testCtx(remote), {})).rejects.toThrow("does not exist");
@@ -145,7 +152,14 @@ describe("env", () => {
     const ctx = testCtx(remote);
     await envUnset(ctx, ["A"], {});
     await envList(ctx, {});
-    expect(remote.calls.find((c) => c.args[1] === "unset")!.args.slice(-1)).toEqual(["A"]);
+    expect(remote.calls.find((c) => c.args[1] === "unset")!.args.slice(-2)).toEqual(["--", "A"]);
     expect(ctx.lines.slice(-2)).toEqual(["A=********", "B=********"]);
+  });
+
+  test("unset refuses names that are not variable names", async () => {
+    const remote = new FakeRemote({ version: VERSION_OK });
+    await expect(envUnset(testCtx(remote), ["--workspace=production"], {})).rejects.toMatchObject({ exitCode: 2 });
+    await expect(envUnset(testCtx(remote), ["A", "1B"], {})).rejects.toThrow('"1B"');
+    expect(remote.calls).toHaveLength(0);
   });
 });

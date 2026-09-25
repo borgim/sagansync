@@ -47,7 +47,7 @@ jobs:
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
           args: release --clean
@@ -60,17 +60,29 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # npm trusted publishing (OIDC) and provenance
     defaults:
       run:
         working-directory: cli
     steps:
       - uses: actions/checkout@v7
+      # Trusted publishing needs npm 11.5.1 or newer, which ships with Node 24.
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # npm authorizes this workflow through the trusted publisher set up on
+      # npmjs.com, so no npm token is stored in the repository. A version
+      # already on npm is skipped, so this job can be re-run on its own when
+      # it fails after the GitHub release went out.
+      - name: Publish to npm
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ -n "$(npm view "sagansync@$version" version 2>/dev/null)" ]; then
+            echo "sagansync@$version is already on npm"
+            exit 0
+          fi
+          # A pre-release such as 0.2.0-rc.1 must not become "latest".
+          case "$version" in *-*) tag=next ;; *) tag=latest ;; esac
+          npm publish --provenance --access public --tag "$tag"

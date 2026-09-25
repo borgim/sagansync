@@ -57,6 +57,7 @@ type Fake struct {
 	BuildErr    error
 	BuildLines  []string
 	BuildHook   func(tag string)
+	RemoveErr   error // returned by Remove, which then leaves the container alone
 	Behave      func(spec runtime.ContainerSpec) Behavior
 	InspectHook func(name string) // called before Inspect, outside the lock
 }
@@ -154,6 +155,9 @@ func (f *Fake) Stop(_ context.Context, name string, _ time.Duration) error {
 func (f *Fake) Remove(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.RemoveErr != nil {
+		return f.RemoveErr
+	}
 	e, ok := f.containers[name]
 	if !ok {
 		return fmt.Errorf("container %s: %w", name, runtime.ErrNotFound)

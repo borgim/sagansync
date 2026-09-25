@@ -10,12 +10,13 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { Ctx } from "../src/commands/context.js";
 import { deploy } from "../src/commands/deploy.js";
 import { dev, type DevSession } from "../src/commands/dev.js";
-import { envList, envSet } from "../src/commands/env.js";
+import { envList, envSet, envUnset } from "../src/commands/env.js";
 import { list } from "../src/commands/list.js";
 import { logs } from "../src/commands/logs.js";
 import { remove } from "../src/commands/remove.js";
 import { validateConfig } from "../src/lib/config.js";
 import { sshRemote, type Target } from "../src/lib/ssh.js";
+import { VERSION } from "../src/version.js";
 import { pointsToVps, projectDir } from "./helpers/ctx.js";
 
 const agentDir = path.resolve(import.meta.dirname, "../../agent");
@@ -41,7 +42,7 @@ describe.skipIf(!hasGo)("CLI <-> sagand contract", () => {
     const bin = path.join(tmp, "bin");
     const build = (pkg: string, out: string, ...flags: string[]) =>
       execFileSync("go", ["build", ...flags, "-o", path.join(bin, out), pkg], { cwd: agentDir, stdio: "inherit" });
-    build("./cmd/sagand", "sagand", "-ldflags", "-X main.version=0.1.0");
+    build("./cmd/sagand", "sagand", "-ldflags", `-X main.version=${VERSION}`);
     build("./internal/testutil/cmd/fakesagand", "fakesagand");
     const sock = path.join(tmp, "s.sock");
     daemon = spawn(path.join(bin, "fakesagand"), [sock, data], { stdio: ["ignore", "pipe", "inherit"] });
@@ -86,6 +87,15 @@ SSH_ORIGINAL_COMMAND="$last" SAGAND_SOCKET="${sock}" exec "${bin}/sagand" gatewa
     expect(c.lines.slice(-2)).toEqual(["PLAIN=********", "TRICKY=********"]);
     const stored = JSON.parse(fs.readFileSync(path.join(data, "env", "app", "production.json"), "utf8"));
     expect(stored.TRICKY).toBe(tricky);
+  });
+
+  test("env unset removes only the named keys", async () => {
+    const c = ctx();
+    await envSet(c, ["GONE=1", "KEPT=1"], {});
+    await envUnset(c, ["GONE"], {});
+    await envList(c, {});
+    expect(c.lines).not.toContain("GONE=********");
+    expect(c.lines).toContain("KEPT=********");
   });
 
   test("dev mode starts on a preview host and syncs files with awkward names", async () => {

@@ -1,5 +1,6 @@
 import type { Readable } from "node:stream";
 import type { Input, Remote, RunResult } from "../../src/lib/ssh.js";
+import { PROTOCOL, VERSION } from "../../src/version.js";
 
 export type Call = { args: string[]; stdin: string };
 type Reply = Partial<RunResult> | ((call: Call) => Partial<RunResult>);
@@ -44,4 +45,4 @@ export class FakeRemote implements Remote {
 }
 
 export const ev = (e: Record<string, unknown>) => JSON.stringify({ v: 1, ...e });
-export const VERSION_OK = { stdout: '{"version":"0.1.0","protocol":1}\n' };
+export const VERSION_OK = { stdout: `${JSON.stringify({ version: VERSION, protocol: PROTOCOL })}\n` };

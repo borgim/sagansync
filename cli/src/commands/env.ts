@@ -81,8 +81,11 @@ export async function envSet(ctx: Ctx, pairs: string[], opts: EnvOptions & { fil
 export async function envUnset(ctx: Ctx, keys: string[], opts: EnvOptions): Promise<void> {
   const workspace = resolveWorkspace(ctx.cwd, opts.workspace);
   if (keys.length === 0) throw new CliError("Pass the names of the variables to remove.", 2);
+  const invalid = keys.find((k) => !KEY_RE.test(k));
+  if (invalid !== undefined) throw new CliError(`"${invalid}" is not a variable name.`, 2);
   await preflight(ctx);
-  const r = await ctx.remote.run(["env", "unset", ...workspaceFlags(ctx.config, workspace), ...keys]);
+  // "--" keeps sagand from ever reading a key as one of its own flags.
+  const r = await ctx.remote.run(["env", "unset", ...workspaceFlags(ctx.config, workspace), "--", ...keys]);
   if (r.code !== 0) throw failure(r);
   ctx.out(paint("green", `✔ Removed ${keys.join(", ")} from ${workspace}.`) + " Redeploy to apply: sagansync deploy");
 }

@@ -161,3 +161,21 @@ func TestPublicServersTimeOutIdleConnections(t *testing.T) {
 		t.Fatalf("IdleTimeout = %v, ReadHeaderTimeout = %v; both must be set on internet-facing servers", s.IdleTimeout, s.ReadHeaderTimeout)
 	}
 }
+
+// The CLI sends "--" before the keys, so a key can never be read as a flag.
+func TestEnvUnsetKeysAfterDoubleDash(t *testing.T) {
+	startDaemon(t)
+	var out bytes.Buffer
+	ws := []string{"--project", "app", "--workspace", "production"}
+	if code := run(append([]string{"env", "set"}, ws...), strings.NewReader(`{"A":"1","B":"2"}`), &out, &out); code != 0 {
+		t.Fatalf("set: exit %d, %q", code, out.String())
+	}
+	out.Reset()
+	if code := run(append(append([]string{"env", "unset"}, ws...), "--", "A"), nil, &out, &out); code != 0 {
+		t.Fatalf("unset: exit %d, %q", code, out.String())
+	}
+	out.Reset()
+	if code := run(append([]string{"env", "list"}, ws...), nil, &out, &out); code != 0 || !strings.Contains(out.String(), `["B"]`) {
+		t.Fatalf("list: exit %d, %q", code, out.String())
+	}
+}

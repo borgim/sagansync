@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -137,4 +138,23 @@ func TestLocks(t *testing.T) {
 		t.Fatal("TryLock after unlock failed")
 	}
 	again()
+}
+
+func TestPutIfHostFreeRefusesAHostOwnedElsewhere(t *testing.T) {
+	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
+	if err := s.PutIfHostFree("one", "production", sample("shared.test")); err != nil {
+		t.Fatal(err)
+	}
+	err := s.PutIfHostFree("two", "production", sample("shared.test"))
+	var taken *HostTakenError
+	if !errors.As(err, &taken) || taken.Owner.Project != "one" || taken.Owner.Workspace != "production" {
+		t.Fatalf("err = %v, want HostTakenError owned by one/production", err)
+	}
+	if _, ok := s.Get("two", "production"); ok {
+		t.Error("the refused workspace was saved")
+	}
+	// The owner itself can keep writing its host.
+	if err := s.PutIfHostFree("one", "production", sample("shared.test")); err != nil {
+		t.Fatalf("owner rewrite: %v", err)
+	}
 }

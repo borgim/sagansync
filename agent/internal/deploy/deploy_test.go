@@ -327,3 +327,30 @@ func TestInvalidRequests(t *testing.T) {
 		}
 	}
 }
+
+// A host claimed by another workspace while this deploy was building must not
+// be taken over when the new release is activated.
+func TestHostClaimedDuringBuildIsNotTakenOver(t *testing.T) {
+	h := testdeploy.New(t)
+	one := testdeploy.Request("production")
+	one.Project, one.Domain = "one", "shared.test"
+	two := one
+	two.Project = "two"
+	h.RT.BuildHook = func(string) {
+		_ = h.State.Put("one", "production", state.Workspace{Host: "shared.test", Mode: state.ModeDeploy,
+			Release: "r0", Container: "sagan_one_production_r0", HostPort: 40000})
+		h.Routes.Set("shared.test", "127.0.0.1:40000")
+	}
+	if _, err := h.Deploy(t, two); errCode(err) != deploy.CodeHostConflict {
+		t.Fatalf("err = %v, want host_conflict", err)
+	}
+	if got := h.Routes.Get("shared.test"); got != "127.0.0.1:40000" {
+		t.Errorf("route = %q, want the owner's upstream", got)
+	}
+	if _, ok := h.State.Get("two", "production"); ok {
+		t.Error("two/production was saved")
+	}
+	if names := h.RT.Names(); len(names) != 0 {
+		t.Errorf("containers left behind: %v", names)
+	}
+}

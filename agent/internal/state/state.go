@@ -83,6 +83,38 @@ func (s *Store) Get(p, w string) (Workspace, bool) {
 func (s *Store) Put(p, w string, ws Workspace) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.put(p, w, ws)
+}
+
+// HostTakenError reports that another workspace already serves the host.
+type HostTakenError struct {
+	Host  string
+	Owner Entry
+}
+
+func (e *HostTakenError) Error() string {
+	return fmt.Sprintf("%s is already used by %s/%s", e.Host, e.Owner.Project, e.Owner.Workspace)
+}
+
+// PutIfHostFree saves ws only if no other workspace owns ws.Host. The check
+// and the write happen under one lock, so two deploys racing for the same
+// host cannot both claim it.
+func (s *Store) PutIfHostFree(p, w string, ws Workspace) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ws.Host != "" {
+		for op, pr := range s.data.Projects {
+			for ow, other := range pr.Workspaces {
+				if other.Host == ws.Host && (op != p || ow != w) {
+					return &HostTakenError{Host: ws.Host, Owner: Entry{Project: op, Workspace: ow, WS: other}}
+				}
+			}
+		}
+	}
+	return s.put(p, w, ws)
+}
+
+func (s *Store) put(p, w string, ws Workspace) error {
 	pr := s.data.Projects[p]
 	if pr.Workspaces == nil {
 		pr.Workspaces = map[string]Workspace{}

@@ -42,12 +42,14 @@ func (d *Deployer) Remove(ctx context.Context, p, w string) error {
 	if !ok {
 		return notFound(p, w)
 	}
-	if ws.Host != "" {
-		d.routes.Delete(ws.Host)
-	}
 	_ = d.rt.Stop(ctx, ws.Container, d.cfg.StopTimeout)
 	if err := d.rt.Remove(ctx, ws.Container); err != nil && !errors.Is(err, runtime.ErrNotFound) {
 		return internalErr(err)
+	}
+	// The route goes only once the container is gone: if removing it fails,
+	// the workspace stays routed and reconciliation can bring it back.
+	if ws.Host != "" {
+		d.routes.Delete(ws.Host)
 	}
 	entries, _ := os.ReadDir(d.releasesDir(p, w))
 	for _, e := range entries {

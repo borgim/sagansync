@@ -3,6 +3,7 @@ package deploy_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -107,5 +108,22 @@ func TestEnvValidation(t *testing.T) {
 	}
 	if err := h.D.EnvSet("../etc", "production", map[string]string{"A": "x"}); errCode(err) != deploy.CodeInvalid {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A failed container removal keeps the route and the state, so the workspace
+// is still served and a later remove can finish the job.
+func TestRemoveKeepsTheRouteWhenTheContainerCannotBeRemoved(t *testing.T) {
+	h := testdeploy.New(t)
+	_, _ = h.Deploy(t, testdeploy.Request("feat-x"))
+	h.RT.RemoveErr = errors.New("podman is down")
+	if err := h.D.Remove(context.Background(), "app", "feat-x"); errCode(err) != deploy.CodeInternal {
+		t.Fatalf("err = %v, want internal", err)
+	}
+	if h.Routes.Get("feat-x.app.test") == "" {
+		t.Error("route deleted although the container is still there")
+	}
+	if _, ok := h.State.Get("app", "feat-x"); !ok {
+		t.Error("state deleted")
 	}
 }

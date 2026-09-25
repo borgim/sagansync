@@ -55,6 +55,10 @@ func Extract(r io.Reader, dest string, lim Limits) error {
 		if entries >= lim.MaxEntries {
 			return bad("more than %d entries", lim.MaxEntries)
 		}
+		// git archive writes a pax global header holding the commit id.
+		if hdr.Typeflag == tar.TypeXGlobalHeader {
+			continue
+		}
 		name := strings.TrimSuffix(strings.TrimPrefix(hdr.Name, "./"), "/")
 		if name == "" || name == "." {
 			continue

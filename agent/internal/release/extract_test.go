@@ -3,6 +3,7 @@ package release
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"io"
 	"os"
@@ -149,5 +150,37 @@ func TestTarDirRoundTrip(t *testing.T) {
 	want := []string{"Dockerfile", "link", "src/", "src/a.js"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("names = %v, want %v", names, want)
+	}
+}
+
+// git archive starts every tarball with a pax global header that carries the
+// commit id; it holds no file and must be skipped.
+func TestExtractSkipsPaxGlobalHeader(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(tw.WriteHeader(&tar.Header{Typeflag: tar.TypeXGlobalHeader, Name: "pax_global_header",
+		PAXRecords: map[string]string{"comment": "abc1234def"}}))
+	must(tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: "app/index.js", Mode: 0o644, Size: 2}))
+	_, err := tw.Write([]byte("ok"))
+	must(err)
+	must(tw.Close())
+	must(gz.Close())
+
+	dest := t.TempDir()
+	if err := Extract(&buf, dest, DefaultLimits); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dest, "app", "index.js")); err != nil || string(b) != "ok" {
+		t.Fatalf("index.js = %q, %v", b, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "pax_global_header")); !os.IsNotExist(err) {
+		t.Error("pax_global_header was written as a file")
 	}
 }
